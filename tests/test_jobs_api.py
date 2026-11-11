@@ -926,6 +926,30 @@ def test_resplit_409s_when_no_source_was_kept(resplit_client, tmp_path):
     assert "source" in r.json()["detail"]
 
 
+def test_resplit_without_a_kept_source_separates_the_stems_summed_back(
+    resplit_client, tmp_path, monkeypatch
+):
+    """A link's download is deleted after separation and some tracks have no
+    URL to fetch again: choosing the other model for such a song used to fail
+    with "no source kept for this track". The stems add back up to the song."""
+    import numpy as np
+    import soundfile as sf
+
+    monkeypatch.setattr("app.score.store.JOBS_DIR", tmp_path)
+    job = _finished_upload(tmp_path, source=None)
+    for name in ("vocals", "piano"):
+        sf.write(tmp_path / job.id / "stems" / f"{name}.wav", np.full((441, 2), 0.1), 44100)
+
+    r = resplit_client.post(
+        f"/api/jobs/{job.id}/resplit", json={"stems": [], "separator": "demucs"}
+    )
+
+    assert r.status_code == 200
+    new_id = r.json()["job_id"]
+    assert (tmp_path / new_id / "source.wav").is_file()
+    assert _jobs[new_id].source_format == "wav" and _jobs[new_id].separator == "demucs"
+
+
 def test_resplit_ignores_a_source_with_an_extension_we_never_accept(resplit_client, tmp_path):
     """source.* is a glob, and the job directory is not a trusted input just
     because we created it. Only the extensions the importer accepts may be fed

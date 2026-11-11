@@ -233,6 +233,25 @@ def _run_demucs(job: Job, source: Path, job_dir: Path, device: str) -> tuple[int
     return (0, tail) if job_ok else (1, tail)
 
 
+def _separate_roformer(job: Job, source: Path, job_dir: Path) -> Path:
+    """BS-RoFormer SW (experimental, chosen at import): the six stems where
+    collect() expects Demucs' (and cleans them up the same way)."""
+    from app.experimental import separation
+
+    device = get_demucs_device()
+    job.compute_device = device
+    _set(job, progress=0.1, stage="Separating stems (RoFormer)...")
+    logger.info("[%s] separating with BS-RoFormer SW on device=%s", job.id, device)
+    out = job_dir / DEMUCS_MODEL / source.stem
+    try:
+        separation.separate(source, out, device="cuda" if device == "cuda" else "cpu")
+    except Exception as e:  # noqa: BLE001 -- reported like a Demucs failure
+        raise SeparationError(f"roformer failed: {e}", tail=[str(e)[-400:]], device=device) from e
+    if job.cancel_requested:
+        raise JobCancelled()
+    return out
+
+
 def separate(job: Job, source: Path, job_dir: Path) -> Path:
     """Run demucs on the configured device, falling back to CPU once when a
     GPU attempt fails (#276).
@@ -244,6 +263,8 @@ def separate(job: Job, source: Path, job_dir: Path) -> Path:
     with no diagnostics is strictly worse for them than a slow one that
     explains itself."""
     _set(job, status="separating", progress=0.0, stage="Separating stems...")
+    if job.separator == "roformer":
+        return _separate_roformer(job, source, job_dir)
 
     # Read the device fresh per job (not a frozen import) so a Settings change
     # applies to the next separation without a restart. Recorded on the job for

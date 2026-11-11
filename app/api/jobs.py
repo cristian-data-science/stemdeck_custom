@@ -217,6 +217,21 @@ class JobRequest(BaseModel):
     # rejected, so a future model with extra stems doesn't break older
     # clients pinning the old set.
     stems: list[str] | None = None
+    # The separation model: "demucs" (default) or "roformer" (experimental,
+    # only when installed -- see app/experimental/separation.py).
+    separator: str | None = None
+
+
+def _separator(value: str | None) -> str:
+    """The model asked for, checked: unknown names are the default; RoFormer
+    must be installed (a 422 says so, rather than a job failing later)."""
+    if value != "roformer":
+        return "demucs"
+    from app.experimental import separation
+
+    if not separation.available():
+        raise HTTPException(status_code=422, detail="el separador RoFormer no está instalado")
+    return "roformer"
 
 
 @router.post("")
@@ -258,6 +273,7 @@ async def _create_youtube_job(request: Request) -> dict[str, str]:
     job = Job(
         id=uuid.uuid4().hex[:12],
         selected_stems=selected,
+        separator=_separator(payload.separator),
         source_url=url,
         # Captured now, not when the sections stage is reached: that is the
         # last thing the pipeline does, and the toggle clears itself as soon
@@ -292,6 +308,7 @@ async def _create_local_job(request: Request) -> dict[str, str]:
     form = await request.form()
     upload = form.get("file")
     stems_raw = form.get("stems", "[]")
+    separator = _separator(form.get("separator"))
 
     if upload is None or not hasattr(upload, "filename"):
         raise HTTPException(status_code=422, detail="No file provided")
@@ -356,6 +373,7 @@ async def _create_local_job(request: Request) -> dict[str, str]:
     job = Job(
         id=job_id,
         selected_stems=selected,
+        separator=separator,
         title=title,
         duration_sec=duration,
         source_url=local_source_url,
@@ -558,6 +576,9 @@ class ResplitBody(BaseModel):
     trusted, and an empty result falls back to every stem."""
 
     stems: list[str] = Field(default_factory=list, max_length=len(STEM_NAMES))
+    # The model for the new run; the other one is how a song gets separated
+    # again "with the other model".
+    separator: str | None = None
 
 
 def _retained_source(job_id: str) -> Path | None:
@@ -617,6 +638,17 @@ def _link_or_copy(src: Path, dest: Path) -> None:
         shutil.copy2(src, dest)
 
 
+def _resplit_title(title: str | None, separator: str) -> str | None:
+    """The song's title, saying which model made this version: a re-split of
+    a RoFormer copy with Demucs must not keep " — separador RoFormer"."""
+    from app.experimental.separation import MODELS, TITLE_SUFFIX, _base_title
+
+    if title is None:
+        return None
+    base = _base_title(title)
+    return base + TITLE_SUFFIX.format(MODELS["roformer"]) if separator == "roformer" else base
+
+
 @router.post("/{job_id}/resplit")
 async def resplit_job(job_id: str, body: ResplitBody) -> dict:
     """Separate a finished upload again, from the source kept beside it.
@@ -640,11 +672,22 @@ async def resplit_job(job_id: str, body: ResplitBody) -> dict:
 
     source = _retained_source(job_id)
     if source is None:
+        # No upload kept (a link's download is deleted after separation, and
+        # some tracks have no URL to fetch again): the song rebuilt as the sum
+        # of its stems -- the separated sources add back up to the mixture --
+        # the same audio the score page transcribes a solo piano from. Without
+        # it, choosing the other model for a loaded song failed with "no source
+        # kept for this track".
+        from app.score.store import source_audio
+
+        source = await asyncio.to_thread(source_audio, job_id)
+    if source is None:
         # Not a failure of this request: the track simply has nothing to
         # re-separate from. The UI offers re-import for anything with a URL.
         raise HTTPException(status_code=409, detail="no source kept for this track")
 
     selected = [s for s in body.stems if s in STEM_NAMES] or list(STEM_NAMES)
+    separator = _separator(body.separator)
 
     new_id = uuid.uuid4().hex[:12]
     new_dir = JOBS_DIR / new_id
@@ -661,7 +704,8 @@ async def resplit_job(job_id: str, body: ResplitBody) -> dict:
     new_job = Job(
         id=new_id,
         selected_stems=selected,
-        title=job.title,
+        separator=separator,
+        title=_resplit_title(job.title, separator),
         duration_sec=job.duration_sec,
         # Still a local: source, so this job keeps its own copy and can be
         # re-split in turn -- but distinct, so the library shows it beside the

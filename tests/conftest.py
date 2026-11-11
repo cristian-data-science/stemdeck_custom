@@ -9,6 +9,19 @@ from app.pipeline import jobqueue as _jobqueue
 
 
 @pytest.fixture(autouse=True)
+def _no_auto_pianoteq(monkeypatch):
+    """No test renders with Pianoteq behind its back. Every finished score
+    starts a render on its own (app/api/score.py pianoteq_soon), and on a
+    machine with Pianoteq installed that ran the real program from tests that
+    never asked, holding its render lock across tests. A test that wants it
+    sets STEMDECK_PIANOTEQ_AUTO=1 (with a stub Pianoteq)."""
+    monkeypatch.setenv("STEMDECK_PIANOTEQ_AUTO", "0")
+    # Nor a piano score queued by itself after every separation a test runs
+    # (app/api/score.py prepare_after_separation).
+    monkeypatch.setenv("STEMDECK_SCORE_AUTO", "0")
+
+
+@pytest.fixture(autouse=True)
 def _no_wikidata(monkeypatch):
     """No test reaches Wikidata. A job with an artist tag looks its band up
     while it runs (#699), so any pipeline or endpoint test with tags would

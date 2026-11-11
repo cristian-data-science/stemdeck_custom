@@ -394,6 +394,10 @@ const en = {
   "lyrics.sync.laneHint": "Drag a line · ← → nudge",
   "extract.all": "All",
   "extract.moreAria": "Choose stems",
+  "extract.model": "Model",
+  "extract.modelTitle": "Which model separates the stems. RoFormer (experimental) hears keyboards and guitars better; Demucs is the usual one.",
+  "extract.modelDemucs": "Demucs",
+  "extract.modelRoformer": "RoFormer (keys and guitar)",
   "process.extractStems": "Extract stems",
 
   "stem.original": "Original",
@@ -7551,6 +7555,10 @@ const es = {
   "lyrics.sync.laneHint": "Arrastra una línea · ← → mover",
   "extract.all": "Todo",
   "extract.moreAria": "Elegir las pistas",
+  "extract.model": "Modelo",
+  "extract.modelTitle": "Qué modelo separa las pistas. RoFormer (experimental) distingue mejor teclados y guitarras; Demucs es el de siempre.",
+  "extract.modelDemucs": "Demucs",
+  "extract.modelRoformer": "RoFormer (teclado y guitarra)",
   "process.extractStems": "Extraer stems",
 
   "stem.original": "Original",

@@ -1216,6 +1216,9 @@ document.addEventListener("click", (e) => {
     return;
   }
   const anchor = e.target.closest('a[target="_blank"]');
+  // Off to the score at this moment of the song (?t=): the mixer stops, or
+  // both would play at once.
+  if (anchor?.classList.contains("mx-score-link") && transport()?.isPlaying?.()) togglePlayPause();
   if (anchor?.href) {
     const openUrl = window.__TAURI__?.core?.invoke;
     if (openUrl) {

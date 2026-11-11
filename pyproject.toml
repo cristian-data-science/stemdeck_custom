@@ -96,6 +96,15 @@ dependencies = [
     # own cuBLAS/cuDNN requirement. Word timestamps come from word_timestamps=True.
     # Model weights are downloaded on first use, never bundled.
     "openai-whisper>=20250625",
+    # Score view (app/score/, docs/partitura.md): piano stem -> MIDI. Kong et
+    # al.'s piano transcription model, MIT, on the torch already pinned above.
+    # Its 170 MB checkpoint is fetched on first use into MODELS_DIR by
+    # app/score/transcribe.py (the package's own downloader shells out to wget,
+    # which Windows lacks). Other stems use Basic Pitch over ONNX, vendored in
+    # app/score/basic_pitch_onnx.py rather than depended on: see that module.
+    "piano-transcription-inference>=0.0.6,<0.1",
+    # Standard MIDI File writing for the score export (tempo map per beat).
+    "mido>=1.3",
 ]
 
 [project.optional-dependencies]
@@ -104,6 +113,8 @@ dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "httpx>=0.27",
+    # Note-level F1 for the score transcription tests.
+    "mir-eval>=0.7",
 ]
 
 [build-system]

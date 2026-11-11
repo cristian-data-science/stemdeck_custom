@@ -393,6 +393,35 @@ export function renderRealMiniWaveFromPeaks(stemName, pts, color) {
   }
 }
 
+// Stems the score module can transcribe (app/score/engines.py).
+const SCORE_STEMS = new Set(["piano", "bass", "guitar", "vocals", "lead_vocals", "backing_vocals", "other"]);
+
+function makeScoreLink(stem) {
+  if (!SCORE_STEMS.has(stem.name)) return null;
+  const a = document.createElement("a");
+  a.className = "mx-score-link";
+  a.target = "_blank";
+  a.rel = "noopener";
+  a.textContent = "𝄞";
+  a.setAttribute("aria-label", "Partitura");
+  a.title = "Extraer el MIDI de este stem y verlo como partitura editable";
+  // The row is built with the empty studio shell, before a track is loaded,
+  // and kept across tracks: resolve the job when the link is used, not here.
+  const point = () => {
+    const fromUrl = /\/api\/jobs\/([a-f0-9]{12})\//.exec(stem.url || "")?.[1];
+    const job = currentJobId || fromUrl;
+    // The moment the song is at, so the score opens there (?t=), not at 0:00.
+    const tx = audioEngine ?? multitrack;
+    const now = Number(tx?.getCurrentTime?.()) || 0;
+    const at = job && job === currentJobId && now > 0.5 ? `&t=${now.toFixed(1)}` : "";
+    a.href = job ? `/score/?job=${job}&stem=${encodeURIComponent(stem.name)}${at}` : "/score/";
+  };
+  point();
+  for (const ev of ["pointerdown", "focus", "mouseenter", "click"]) a.addEventListener(ev, point);
+  a.addEventListener("pointerdown", (e) => e.stopPropagation());
+  return a;
+}
+
 function downloadIcon() {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 24 24");
@@ -581,6 +610,12 @@ export function renderMixerRow(stem) {
   dl.download = `${stem.name}.wav`;
   dl.title = t("aria.download", { name: display });
   dl.appendChild(downloadIcon());
+
+  // Score view (static/score/): stems with a transcription engine get a link
+  // beside their name. A link, not a handler, so the desktop shell's
+  // a[target=_blank] routing applies (see main.js).
+  const scoreLink = makeScoreLink(stem);
+  if (scoreLink) nameEl.append(scoreLink);
 
   // Wrap name + VU in a column so VU appears below the name
   const nameVuCol = document.createElement("div");

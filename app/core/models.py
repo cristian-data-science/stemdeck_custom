@@ -322,6 +322,10 @@ class Job:
     # app/pipeline/vocal_split.py) and is recorded in stems/vocal_split_error.txt,
     # not job.error_detail, since the job itself did not fail.
     vocal_split: Literal["none", "running", "done", "error"] = "none"
+    # Which model separated the stems: Demucs (htdemucs_6s, the default) or
+    # BS-RoFormer SW (experimental, app/experimental/separation.py; chosen at
+    # import when installed). Better for a keyboard Demucs hears as guitar.
+    separator: Literal["demucs", "roformer"] = "demucs"
     # When the user put this job in the Trash, or None if they have not.
     #
     # Server-side on purpose. The Trash used to live only in the browser's
@@ -406,6 +410,7 @@ class Job:
             "gpu_fallback": self.gpu_fallback,
             "stage_timings": self.stage_timings,
             "vocal_split": self.vocal_split,
+            "separator": self.separator,
             "trashed_at": self.trashed_at,
             "favorite": self.favorite,
             "created_at": self.created_at,

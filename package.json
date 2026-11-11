@@ -7,7 +7,8 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:acceptance": "playwright test -c tests/acceptance/playwright.acceptance.config.mjs",
-    "test:js": "for f in tests/js/*.test.mjs; do node \"$f\"; done"
+    "test:js": "for f in tests/js/*.test.mjs; do node \"$f\"; done",
+    "test:score": "playwright test -c tests/score-e2e/playwright.config.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0"

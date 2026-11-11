@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Partitura — StemDeck</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/css/variables.css" />
+    <link rel="stylesheet" href="/css/score.css" />
+  </head>
+  <body>
+    <header class="sc-top">
+      <a class="sc-back" id="sc-back" href="/" title="Volver al estudio">← StemDeck</a>
+      <div class="sc-title">
+        <h1 id="sc-title">Partitura</h1>
+        <div class="sc-sub" id="sc-sub"></div>
+      </div>
+      <div class="sc-chips" id="sc-chips" hidden>
+        <span class="sc-chip" title="Tempo (del beat grid de la canción)"><b id="sc-bpm">–</b> BPM</span>
+        <span class="sc-chip" title="Compás"><b id="sc-meter">–</b></span>
+        <span class="sc-chip" title="Tonalidad"><b id="sc-key">–</b></span>
+        <span class="sc-chip" title="Notas en la partitura"><b id="sc-count">–</b> notas</span>
+      </div>
+      <div class="sc-top-actions" id="sc-export" hidden>
+        <a class="sc-btn" id="sc-dl-mid" download title="MIDI cuantizado, con el mapa de tempo real de la canción">MIDI</a>
+        <a class="sc-btn" id="sc-dl-raw" download title="MIDI tal como se tocó (sin cuantizar)">MIDI crudo</a>
+        <a class="sc-btn" id="sc-dl-xml" download title="Para MuseScore, Sibelius, Finale…">MusicXML</a>
+        <button class="sc-btn" id="sc-print" type="button" title="Imprimir o guardar como PDF">PDF</button>
+      </div>
+      <div class="sc-view-actions" id="sc-view-actions" hidden>
+        <button class="sc-btn" id="sc-bare" type="button" aria-pressed="false" title="Ocultar todos los paneles: queda una línea con la canción y dónde va (P)">▤ Ocultar paneles</button>
+        <button class="sc-btn" id="sc-fs" type="button" aria-pressed="false" title="Pantalla completa (F). En el piano, con las proporciones de un video de notas cayendo">⛶ Pantalla completa</button>
+      </div>
+    </header>
+
+    <!-- «Ocultar paneles»: only this line stays (the song, where it is, a few details) -->
+    <div class="sc-minibar" id="sc-mini" hidden>
+      <button class="sc-btn sc-mini-play" id="sc-mini-play" type="button" title="Reproducir / pausar (Espacio)">▶</button>
+      <span class="sc-mini-text" id="sc-mini-text"></span>
+      <button class="sc-btn" id="sc-mini-panels" type="button" title="Mostrar los paneles otra vez (P)">▤ Paneles</button>
+      <button class="sc-btn" id="sc-mini-fs" type="button" title="Pantalla completa (F)">⛶</button>
+    </div>
+
+    <!-- Landing: no job chosen -->
+    <section class="sc-landing" id="sc-landing" hidden>
+      <h2>Elige una canción</h2>
+      <p class="sc-muted">Se abre el piano si lo hay (tiene un motor dedicado); los demás stems (bajo, guitarra, voz, otros) se abren desde el 𝄞 de su fila en el estudio.</p>
+      <ul class="sc-joblist" id="sc-joblist"></ul>
+      <div class="sc-calib">
+        <h3>¿Quieres comprobar que todo funciona?</h3>
+        <p class="sc-muted">La canción de calibración tiene un contenido conocido de antemano, así que puedes comparar la partitura con una lista en vez de juzgar a ojo.</p>
+        <button class="sc-btn sc-primary" id="sc-make-calib" type="button">Crear canción de calibración</button>
+      </div>
+      <div class="sc-calib sc-sheet" id="sc-sheet" hidden>
+        <h3>Importar partitura <span class="sc-exp">experimental</span></h3>
+        <p class="sc-muted">Un PDF o una imagen de una partitura de piano. Se lee con Audiveris, se crea la canción (suena con Pianoteq) y en el piano con notas cayendo cada nota lleva su dedo: los impresos en la partitura y, para el resto, uno sugerido (en gris) que puedes cambiar.</p>
+        <div class="sc-sheet-row">
+          <input type="file" id="sc-sheet-file" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff" />
+          <label class="sc-field">Título <input type="text" id="sc-sheet-title" maxlength="120" placeholder="del nombre del archivo" /></label>
+          <label class="sc-field">Tempo <input type="number" id="sc-sheet-bpm" min="20" max="300" step="1" placeholder="60" /> BPM</label>
+          <button class="sc-btn sc-primary" id="sc-sheet-go" type="button">Importar</button>
+        </div>
+        <p class="sc-sheet-status" id="sc-sheet-status"></p>
+      </div>
+    </section>
+
+    <!-- Not transcribed yet / running / failed -->
+    <section class="sc-state" id="sc-state" hidden>
+      <div class="sc-state-card">
+        <h2 id="sc-state-title">Extraer MIDI</h2>
+        <p id="sc-state-text" class="sc-muted"></p>
+        <div class="sc-progress" id="sc-progress" hidden><div id="sc-progress-bar"></div></div>
+        <label class="sc-field sc-source-pick" id="sc-source-wrap" hidden
+               title="Si la canción es solo piano, el audio original da notas más completas que el stem separado">
+          Escuchar desde
+          <select id="sc-source-pick">
+            <option value="auto">Auto (original si es piano solo; el video si muestra notas cayendo)</option>
+            <option value="stem">El stem de piano</option>
+            <option value="original">El audio original</option>
+            <option value="video" hidden>Las notas del video (notas cayendo)</option>
+          </select>
+        </label>
+        <button class="sc-btn sc-primary" id="sc-start" type="button">Extraer MIDI y generar partitura</button>
+        <pre class="sc-error" id="sc-error" hidden></pre>
+      </div>
+    </section>
+
+    <!-- The score -->
+    <section class="sc-main" id="sc-main" hidden>
+      <div class="sc-bar sc-transport">
+        <button class="sc-btn sc-play" id="sc-play" type="button" title="Reproducir / pausar (Espacio)">▶</button>
+        <span class="sc-jumps" role="group" aria-label="Saltar">
+          <button class="sc-btn sc-mini" type="button" data-jump="-30" title="Atrás 30 s">−30</button>
+          <button class="sc-btn sc-mini" type="button" data-jump="-10" title="Atrás 10 s">−10</button>
+          <button class="sc-btn sc-mini" type="button" data-jump="-5" title="Atrás 5 s">−5</button>
+          <button class="sc-btn sc-mini" type="button" data-jump="5" title="Adelante 5 s">+5</button>
+          <button class="sc-btn sc-mini" type="button" data-jump="10" title="Adelante 10 s">+10</button>
+          <button class="sc-btn sc-mini" type="button" data-jump="30" title="Adelante 30 s">+30</button>
+        </span>
+        <button class="sc-btn" id="sc-trash-toggle" type="button" hidden title="Notas borradas: restaurar una o todas">🗑 Borradas (<span id="sc-trash-count">0</span>)</button>
+        <button class="sc-btn" id="sc-view-toggle" type="button" title="Cambiar entre la partitura y el piano con notas cayendo (en el mismo punto)">🎹 Piano</button>
+        <button class="sc-btn" id="sc-controls-toggle" type="button" aria-expanded="true" title="Ocultar o mostrar los demás controles (velocidad, ajustes de la partitura y del piano)">Controles ▴</button>
+        <span class="sc-time"><span id="sc-now">0:00</span> / <span id="sc-total">0:00</span></span>
+        <input type="range" id="sc-seek" min="0" max="1000" value="0" step="1" aria-label="Posición" />
+        <label class="sc-field" title="Qué se escucha">
+          Escuchar
+          <select id="sc-source">
+            <option value="stem">Stem</option>
+            <option value="midi">MIDI extraído</option>
+            <option value="both">Stem + MIDI</option>
+            <option value="mix">Canción completa</option>
+            <option value="pianoteq" hidden>Pianoteq</option>
+          </select>
+        </label>
+        <label class="sc-field" id="sc-pt-wrap" hidden
+               title="Piano de Pianoteq con el que suena la partitura (se vuelve a generar al editar)">
+          Piano
+          <select id="sc-pt-preset"></select>
+        </label>
+        <span class="sc-muted sc-pt-status" id="sc-pt-status" hidden></span>
+        <label class="sc-field sc-speed" title="Velocidad de reproducción (mantiene la afinación). Doble clic: volver a 100 %">
+          Velocidad
+          <input type="range" id="sc-speed" min="25" max="125" step="5" value="100" />
+          <output id="sc-speed-val">100 %</output>
+        </label>
+        <label class="sc-field sc-speed" title="Si ves la nota (o la tecla encendida) antes de oírla, súbelo hasta que coincidan. Se guarda en este equipo. Doble clic: 0">
+          Sincronía
+          <input type="range" id="sc-sync" min="-100" max="500" step="10" value="0" />
+          <output id="sc-sync-val">0 ms</output>
+        </label>
+        <label class="sc-check sc-follow-zoom" title="Desplazar la partitura para seguir lo que suena">
+          <input type="checkbox" id="sc-follow" checked /> Seguir
+        </label>
+        <label class="sc-field sc-follow-zoom" title="Tamaño de la partitura">
+          Zoom
+          <input type="range" id="sc-zoom" min="25" max="70" value="42" />
+        </label>
+      </div>
+
+      <div class="sc-bar sc-practice-bar" id="sc-practice-bar" role="group" aria-label="Práctica">
+        <span class="sc-practice-group" title="Repetir unos compases. A y B: el compás que suena ahora es el inicio o el final. Con notas elegidas, 🔁 repite sus compases">
+          <b class="sc-practice-label">Bucle</b>
+          <button class="sc-btn sc-mini" id="sc-loop-a" type="button" title="El bucle empieza en el compás que suena ahora">A</button>
+          <button class="sc-btn sc-mini" id="sc-loop-b" type="button" title="El bucle termina con el compás que suena ahora">B</button>
+          <button class="sc-btn sc-mini" id="sc-loop-toggle" type="button" aria-pressed="false" title="Activar o desactivar el bucle (L)">🔁</button>
+          <button class="sc-btn sc-mini" id="sc-loop-clear" type="button" title="Quitar el bucle">✕</button>
+          <span class="sc-muted" id="sc-loop-label">sin bucle</span>
+          <select id="sc-loop-ramp" title="Al terminar cada vuelta, subir la velocidad hasta llegar a 100 %">
+            <option value="0">Misma velocidad</option>
+            <option value="5">+5 % por vuelta</option>
+            <option value="10">+10 % por vuelta</option>
+          </select>
+        </span>
+        <label class="sc-field" title="Toca tú una mano; el MIDI y Pianoteq tocan solo la otra, y en el piano la mano que no tocas se ve tenue">
+          Manos
+          <select id="sc-hand">
+            <option value="">Ambas suenan</option>
+            <option value="R">Toco la derecha</option>
+            <option value="L">Toco la izquierda</option>
+          </select>
+        </label>
+        <span class="sc-muted" id="sc-hand-hint" hidden>la otra mano solo se separa con «MIDI extraído» o «Pianoteq»</span>
+        <label class="sc-check" title="Un clic en cada pulso de los compases, más agudo en el primero">
+          <input type="checkbox" id="sc-metronome" /> Metrónomo
+        </label>
+        <label class="sc-field" title="Clics antes de empezar a sonar, al pulsar ▶ (también al volver al inicio del bucle)">
+          Cuenta
+          <select id="sc-countin">
+            <option value="0">no</option>
+            <option value="bar">1 compás</option>
+            <option value="2bar">2 compases</option>
+          </select>
+        </label>
+        <label class="sc-check" id="sc-pt-slow-wrap" hidden title="Con Pianoteq y velocidad bajo 100 %, se genera el audio ya a esa velocidad (suena limpio, sin el estirado del navegador)">
+          <input type="checkbox" id="sc-pt-slow" checked /> Pianoteq a mi velocidad
+        </label>
+        <span class="sc-practice-group" id="sc-midi-wrap" title="Un teclado MIDI conectado por USB a este equipo">
+          <button class="sc-btn" id="sc-midi-connect" type="button">🎹 Teclado MIDI</button>
+          <select id="sc-midi-mode" hidden title="Libre: las teclas que tocas se ven y se cuentan los aciertos. Esperarme: la canción se detiene en cada nota hasta que la tocas">
+            <option value="free">Libre</option>
+            <option value="wait">Esperarme</option>
+          </select>
+          <label class="sc-check" id="sc-midi-sound-wrap" hidden title="Que el programa haga sonar tus teclas (si tu teclado no suena solo)">
+            <input type="checkbox" id="sc-midi-sound" /> Sonar mis teclas
+          </label>
+          <span class="sc-muted" id="sc-midi-status"></span>
+        </span>
+      </div>
+
+      <div class="sc-bar sc-fall-bar" id="sc-fall-bar" hidden>
+        <label class="sc-field" title="3D: las notas llegan desde lejos, con brillo y chispas al tocar. Plano: barras simples (más liviano)">
+          Estilo
+          <select id="sc-fall-style">
+            <option value="3d">3D</option>
+            <option value="flat">Plano</option>
+            <option value="video">Video (como YouTube)</option>
+          </select>
+        </label>
+        <label class="sc-field" title="Cuántos segundos de la canción se ven antes de llegar a las teclas: menos, notas más separadas (pasajes rápidos); más, ves venir más">
+          Anticipación
+          <select id="sc-fall-ahead">
+            <option value="2">2 s</option>
+            <option value="3">3 s</option>
+            <option value="4">4 s</option>
+            <option value="6">6 s</option>
+            <option value="8">8 s</option>
+          </select>
+        </label>
+        <label class="sc-field" title="Teclas del piano de abajo">
+          Teclado
+          <select id="sc-fall-keys">
+            <option value="song">Rango de la canción</option>
+            <option value="full">88 teclas</option>
+          </select>
+        </label>
+        <label class="sc-field" title="Color de las notas que caen">
+          Colores
+          <select id="sc-fall-colors">
+            <option value="one">Un color</option>
+            <option value="hands">Por mano</option>
+          </select>
+        </label>
+        <label class="sc-field" id="sc-fall-names-wrap" title="Nombre dentro de las notas que caen">
+          Nombres
+          <select id="sc-fall-names">
+            <option value="letters">C D E</option>
+            <option value="solfege">do re mi</option>
+            <option value="none">sin nombres</option>
+          </select>
+        </label>
+        <label class="sc-field" id="sc-fall-fingers-wrap" hidden>
+          En las notas
+          <select id="sc-fall-fingers">
+            <option value="letters">Nombre (C D E)</option>
+            <option value="solfege">Nombre (do re mi)</option>
+            <option value="finger">Número de dedo</option>
+            <option value="both">Nombre y dedo</option>
+            <option value="none">Nada</option>
+          </select>
+          <button class="sc-btn" id="sc-fall-fingers-off" type="button" hidden
+            title="Quitar los dedos de esta canción (también los que pusiste a mano)">Quitar dedos</button>
+        </label>
+        <button class="sc-btn" id="sc-fall-fingers-on" type="button" hidden
+          title="Un dedo sugerido para cada nota de esta canción; después los corriges eligiendo notas y pulsando 1–5. Solo en esta canción.">
+          Activar dedos
+        </button>
+        <button class="sc-btn sc-add" id="sc-fall-add" type="button" aria-pressed="false"
+          title="Añadir notas: toca la tecla a la altura del momento en que suena; arrastra hacia arriba para alargarla. N o Esc para terminar">＋ Nota</button>
+        <span class="sc-muted sc-fall-legend" id="sc-fall-legend" hidden>
+          <i class="sc-swatch sc-swatch-r"></i> mano derecha <i class="sc-swatch sc-swatch-l"></i> mano izquierda
+        </span>
+      </div>
+
+      <div class="sc-panel sc-trash" id="sc-trash" hidden>
+        <div class="sc-trash-head">
+          <b>Notas borradas</b>
+          <span class="sc-muted">la más reciente primero</span>
+          <button class="sc-btn sc-primary" id="sc-trash-all" type="button">Restaurar todas</button>
+          <button class="sc-btn" id="sc-trash-close" type="button" aria-label="Cerrar">✕</button>
+        </div>
+        <ol class="sc-trash-list" id="sc-trash-list"></ol>
+      </div>
+
+      <div class="sc-fall" id="sc-fall" hidden aria-label="Piano con notas cayendo"></div>
+
+      <div class="sc-editbar" id="sc-editbar" hidden role="toolbar" aria-label="Notas seleccionadas">
+        <span id="sc-editbar-n">1 nota</span>
+        <span class="sc-muted">arrastra para correrla</span>
+        <span class="sc-editbar-fingers" id="sc-editbar-fingers" hidden title="Dedo para las notas elegidas (teclas 1–5; 0 = sugerido)">
+          Dedo
+          <button class="sc-btn sc-mini" type="button" data-finger="1">1</button>
+          <button class="sc-btn sc-mini" type="button" data-finger="2">2</button>
+          <button class="sc-btn sc-mini" type="button" data-finger="3">3</button>
+          <button class="sc-btn sc-mini" type="button" data-finger="4">4</button>
+          <button class="sc-btn sc-mini" type="button" data-finger="5">5</button>
+          <button class="sc-btn sc-mini" type="button" data-finger="0" title="Volver al dedo sugerido">auto</button>
+        </span>
+        <button class="sc-btn sc-danger" id="sc-edit-del" type="button" title="Borrar (Supr)">🗑 Borrar</button>
+        <button class="sc-btn" id="sc-edit-clear" type="button" title="Quitar la selección (Esc)">✕</button>
+      </div>
+
+      <div class="sc-bar sc-tools">
+        <label class="sc-field" title="Rejilla a la que se ajustan las notas">
+          Rejilla
+          <select id="sc-grid">
+            <option value="8">Corcheas (1/8)</option>
+            <option value="16">Semicorcheas (1/16)</option>
+            <option value="16t">1/16 + tresillos</option>
+          </select>
+        </label>
+        <label class="sc-field" title="Auto: sigue cada mano en el tiempo (un arpegio de la izquierda que sube no pasa a clave de sol). Corte fijo: todo lo que esté desde la nota elegida hacia arriba va a clave de sol">
+          Manos
+          <select id="sc-hands-select">
+            <option value="auto">Auto (seguir cada mano)</option>
+            <option value="split">Corte fijo</option>
+          </select>
+        </label>
+        <label class="sc-field" title="Corte fijo: desde esta nota hacia arriba va a clave de sol. En Auto es solo una preferencia leve">
+          Mano derecha desde
+          <select id="sc-split"></select>
+        </label>
+        <label class="sc-field" title="Armadura y nombres de notas y acordes. Auto la estima desde las notas de este stem">
+          Tonalidad
+          <select id="sc-key-select"></select>
+        </label>
+        <label class="sc-field" title="De dónde salen los pulsos a los que se ajustan las notas. Auto usa los de la canción, salvo que no sean fiables (por ejemplo, una batería en silencio)">
+          Pulso
+          <select id="sc-pulse-select">
+            <option value="auto">Auto</option>
+            <option value="song">De la canción</option>
+            <option value="audio">Del audio transcrito</option>
+            <option value="notes">De las notas</option>
+          </select>
+        </label>
+        <label class="sc-field" title="Auto: un solo compás para toda la canción. Detectado: las barras tal como las halló el detector de pulsos">
+          Compás
+          <select id="sc-meter-select">
+            <option value="auto">Auto</option>
+            <option value="detected">Detectado</option>
+            <option value="2">2/4</option>
+            <option value="3">3/4</option>
+            <option value="4">4/4</option>
+            <option value="6">6/4</option>
+          </select>
+        </label>
+        <span class="sc-field" title="Si las barras de compás caen un tiempo antes o después de donde deberían">
+          Barras
+          <button class="sc-btn sc-mini" id="sc-shift-left" type="button" aria-label="Mover barras un tiempo antes">◀</button>
+          <button class="sc-btn sc-mini" id="sc-shift-right" type="button" aria-label="Mover barras un tiempo después">▶</button>
+        </span>
+        <label class="sc-field" title="Si el tempo detectado salió al doble o a la mitad">
+          Tempo
+          <select id="sc-tempo">
+            <option value="normal">Detectado</option>
+            <option value="half">× ½ (mitad)</option>
+            <option value="double">× 2 (doble)</option>
+          </select>
+        </label>
+        <label class="sc-field" title="Cada cuánto se busca un acorde">
+          Acordes
+          <select id="sc-chordrate">
+            <option value="beat">cada pulso</option>
+            <option value="half">cada medio compás</option>
+            <option value="bar">cada compás</option>
+            <option value="off">ocultos</option>
+          </select>
+        </label>
+        <label class="sc-field sc-pedal" id="sc-pedal-wrap"
+               title="Cuánto sostiene el pedal al reproducir (MIDI y Pianoteq): 0 % cada nota lo que se sostuvo la tecla, 100 % el pedal completo">
+          Pedal
+          <input type="range" id="sc-pedal" min="0" max="100" step="5" value="0" />
+          <output id="sc-pedal-val">0 %</output>
+        </label>
+        <label class="sc-field" title="Nombres dentro de las notas y de los acordes">
+          Nombres
+          <select id="sc-names">
+            <option value="solfege">do re mi</option>
+            <option value="letters">C D E</option>
+            <option value="none">sin nombres</option>
+          </select>
+        </label>
+        <span class="sc-sep"></span>
+        <button class="sc-btn" id="sc-undo" type="button" title="Deshacer (Ctrl+Z)" disabled>↶ Deshacer</button>
+        <button class="sc-btn" id="sc-redo" type="button" title="Rehacer (Ctrl+Y)" disabled>↷ Rehacer</button>
+        <button class="sc-btn sc-add" id="sc-add" type="button" aria-pressed="false"
+          title="Añadir notas: toca en la partitura (en su línea o espacio y su lugar del compás) o en el piano (su tecla y su momento; arrastra hacia arriba para alargarla). N o Esc para terminar">＋ Nota</button>
+        <button class="sc-btn" id="sc-clean-toggle" type="button" title="Quitar notas fantasma en bloque">Limpiar…</button>
+        <button class="sc-btn sc-danger" id="sc-reset" type="button" title="Descartar todas las ediciones">Restaurar original</button>
+        <button class="sc-btn" id="sc-help-toggle" type="button" title="Atajos de teclado">?</button>
+        <span class="sc-save" id="sc-save" aria-live="polite"></span>
+      </div>
+
+      <div class="sc-panel" id="sc-clean" hidden>
+        <label>Velocidad mínima <input type="range" id="sc-clean-vel" min="0" max="80" value="0" /> <b id="sc-clean-vel-v">0</b></label>
+        <label>Duración mínima <input type="range" id="sc-clean-dur" min="0" max="300" step="10" value="0" /> <b id="sc-clean-dur-v">0</b> ms</label>
+        <span>Se borrarán <b id="sc-clean-count">0</b> notas (se resaltan en rojo)</span>
+        <button class="sc-btn sc-primary" id="sc-clean-apply" type="button">Aplicar limpieza</button>
+        <button class="sc-btn" id="sc-merge" type="button" title="Une notas de la misma altura separadas por menos de 40 ms">Unir notas repetidas</button>
+      </div>
+
+      <div class="sc-panel sc-help" id="sc-help" hidden>
+        <div><kbd>Clic</kbd> seleccionar · <kbd>Shift</kbd>/<kbd>Ctrl</kbd>+clic añadir · arrastrar en vacío: seleccionar área · <kbd>Doble clic</kbd> escuchar desde ahí</div>
+        <div>Arrastrar una nota: a los lados la corre en el tiempo (pasos de la rejilla), arriba/abajo la sube o baja por la escala · En la vista piano: tocar una nota la elige, a los lados cambia de tecla, arriba/abajo la corre en el tiempo · 🗑 Borrar en la barra flotante</div>
+        <div><kbd>Supr</kbd> borrar · <kbd>↑</kbd>/<kbd>↓</kbd> semitono · <kbd>Ctrl</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> octava · <kbd>←</kbd>/<kbd>→</kbd> mover un paso · <kbd>Shift</kbd>+<kbd>←</kbd>/<kbd>→</kbd> duración</div>
+        <div><kbd>H</kbd> cambiar de mano (clave) · <kbd>A</kbd> poner acorde en la nota · <kbd>Tab</kbd> nota siguiente · <kbd>Esc</kbd> deseleccionar · <kbd>Ctrl</kbd>+<kbd>A</kbd> todo</div>
+        <div><kbd>N</kbd> o <b>＋ Nota</b>: añadir notas tocando donde van (<kbd>Esc</kbd> para terminar) · En la vista piano: arrastrar hacia abajo el borde inferior de una nota hasta la anterior de su tecla las une en una</div>
+        <div><kbd>Ctrl</kbd>+<kbd>Z</kbd> deshacer · <kbd>Ctrl</kbd>+<kbd>Y</kbd> rehacer · <kbd>Espacio</kbd> reproducir · clic en un acorde para cambiarlo</div>
+        <div><kbd>F</kbd> pantalla completa · <kbd>P</kbd> ocultar o mostrar los paneles · En el piano: arrastrar el carril hacia abajo o arriba adelanta o retrocede la canción</div>
+        <div><kbd>L</kbd> bucle sí/no (con notas elegidas: sus compases) · <b>A</b>/<b>B</b>: el compás que suena es el inicio o el final del bucle · <b>Manos</b>: tocas tú una, suena la otra · <b>🎹 Teclado MIDI</b> → <b>Esperarme</b>: la canción se detiene en cada nota hasta que la tocas</div>
+        <div class="sc-muted">Cada cambio se guarda solo en el servidor y sigue ahí al recargar. «Restaurar original» vuelve a la transcripción.</div>
+      </div>
+
+      <div class="sc-status" id="sc-status"></div>
+
+      <div class="sc-calib-check" id="sc-calib-check" hidden>
+        <b>Calibración: lo que debes ver</b>
+        <pre id="sc-calib-text"></pre>
+        <div id="sc-calib-auto"></div>
+      </div>
+
+      <div class="sc-scroll" id="sc-scroll">
+        <div class="sc-score" id="sc-score" tabindex="0" aria-label="Partitura"></div>
+        <div class="sc-band" id="sc-band" hidden></div>
+      </div>
+
+      <details class="sc-diag" id="sc-diag">
+        <summary>Diagnóstico</summary>
+        <div id="sc-diag-body"></div>
+        <div class="sc-reextract" id="sc-reextract" hidden>
+          Volver a extraer desde
+          <select id="sc-reextract-source">
+            <option value="auto">Auto</option>
+            <option value="stem">el stem de piano</option>
+            <option value="original">el audio original</option>
+            <option value="video" hidden>las notas del video (notas cayendo)</option>
+          </select>
+          <button class="sc-btn" id="sc-reextract-go" type="button">Re-extraer</button>
+          <span class="sc-muted">Descarta las ediciones de esta partitura.</span>
+        </div>
+        <div class="sc-reextract" id="sc-resep" hidden>
+          <span><b>Separar con el otro modelo</b> <span id="sc-resep-what"></span>
+            Crea una copia de la canción; esta no cambia.</span>
+          <button class="sc-btn" id="sc-resep-go" type="button">Crear copia separada</button>
+          <a class="sc-btn" id="sc-resep-open" hidden>Abrir la copia</a>
+          <span class="sc-muted" id="sc-resep-status"></span>
+        </div>
+      </details>
+    </section>
+
+    <dialog class="sc-dialog" id="sc-chord-dialog">
+      <form method="dialog">
+        <h3>Acorde</h3>
+        <input id="sc-chord-input" maxlength="24" autocomplete="off" placeholder="p. ej. Rem, La/Mi, Do7" />
+        <div class="sc-dialog-actions">
+          <button class="sc-btn sc-primary" value="save">Guardar</button>
+          <button class="sc-btn" value="remove">Quitar acorde</button>
+          <button class="sc-btn" value="auto">Volver al detectado</button>
+          <button class="sc-btn" value="cancel">Cancelar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="sc-dialog" id="sc-confirm">
+      <form method="dialog">
+        <p id="sc-confirm-text"></p>
+        <div class="sc-dialog-actions">
+          <button class="sc-btn sc-danger" value="ok">Sí</button>
+          <button class="sc-btn" value="cancel">Cancelar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <audio id="sc-audio" preload="auto"></audio>
+    <script type="module" src="/js/score/main.js"></script>
+  </body>
+</html>

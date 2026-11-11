@@ -7,6 +7,8 @@ import { fetchJobs, jobToCard } from "../js/shared/jobs.js";
 import { createChunkedAudioEngine } from "../js/chunkedAudioEngine.js";
 import { PITCH_MAX, PITCH_MIN, clampPitch } from "../js/pitchBus.js";
 import { createPlaybackContext } from "../js/audioContext.js";
+import { fromServerLyrics, currentLineIndex } from "../js/lyricsLookup.js";
+import { timingOf } from "../js/lyricsSync.js";
 // Per-stem label + color, keyed by the backend stem name. Unknown names fall
 // back to a rotating palette so non-standard models still render sensibly.
 const STEM_META = {
@@ -68,6 +70,7 @@ const ICON = {
   upload: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M8 8l4-4 4 4"/><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>',
   heart: (on) => `<svg width="20" height="20" viewBox="0 0 24 24" fill="${on ? "currentColor" : "none"}" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>`,
   check: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+  lock: (on) => `<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/>${on ? '<path d="M8 11V8a4 4 0 0 1 8 0v3"/>' : '<path d="M8 11V8a4 4 0 0 1 7.5-2"/>'}</svg>`,
   scissors: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12"/></svg>',
   tabLib: '<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
   tabMix: '<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8h16M4 16h16"/><circle cx="9" cy="8" r="2.4" fill="currentColor" stroke="none"/><circle cx="15" cy="16" r="2.4" fill="currentColor" stroke="none"/></svg>',
@@ -99,7 +102,15 @@ const state = {
   // "all" = plain Vocals lane (default); "split" = also run the on-demand
   // lead/backing split (#275) once the base separation finishes.
   vocalSplitMode: "all",
+  // 🔒 beside «next»: on a touch screen a stray finger moved a fader or the
+  // speed. Locked, only ▶/❚❚, «next» and the lock itself (held down to
+  // unlock) answer.
+  locked: false,
 };
+
+// Taps that still work while locked.
+// «mixview» too: changing to the lyrics (or back) moves nothing in the song.
+const LOCKED_OK = new Set(["play", "play-mini", "next", "lock", "mixview"]);
 
 let extractES = null; // EventSource for the active extraction
 let extractPoll = null; // REST poll fallback timer
@@ -215,6 +226,113 @@ function onEngineTime(t) {
   if (head) head.style.left = state.progress * 100 + "%";
   if (cur) cur.textContent = fmt(t);
   paintWaveProgress();
+  paintLyrics(t);
+}
+
+// ─── Lyrics (the song's, as the server keeps them: GET /api/jobs/{id}/lyrics) ───
+// Synced lyrics follow playback: a two-line strip under the transport (the
+// line being sung, the next one) and the whole text in the «Letra» view, the
+// line being sung lit and kept in the middle. Plain lyrics are shown as text.
+
+/** {kind: "synced" | "plain" | "instrumental" | "none" | "loading", lines, plain}. */
+async function loadLyrics(id, hasLyrics) {
+  const c = state.current;
+  if (!c || c.id !== id) return;
+  c.lyrics = { kind: hasLyrics ? "loading" : "none", lines: [], plain: "" };
+  if (!hasLyrics) return;
+  try {
+    const res = await fetch(`/api/jobs/${encodeURIComponent(id)}/lyrics`, { cache: "no-store" });
+    const data = res.ok ? await res.json() : null;
+    if (state.current?.id !== id) return;
+    state.current.lyrics = lyricsFrom(data);
+  } catch (e) {
+    console.warn("[mobile] lyrics failed:", e);
+    if (state.current?.id === id) state.current.lyrics = { kind: "none", lines: [], plain: "" };
+  }
+  _lyricLine = -2;
+  render();
+}
+
+function lyricsFrom(data) {
+  const found = fromServerLyrics(data)?.entry;
+  if (!found) return { kind: "none", lines: [], plain: "" };
+  if (found.instrumental) return { kind: "instrumental", lines: [], plain: "" };
+  const lines = found.synced || found.userSynced || found.aligned ? timingOf(found).lines.filter((l) => l.text) : [];
+  if (lines.length) return { kind: "synced", lines, plain: "" };
+  return found.plain ? { kind: "plain", lines: [], plain: found.plain } : { kind: "none", lines: [], plain: "" };
+}
+
+async function lookUpLyrics() {
+  const c = state.current;
+  if (!c) return;
+  c.lyrics = { kind: "loading", lines: [], plain: "" };
+  render();
+  try {
+    const res = await fetch(`/api/jobs/${encodeURIComponent(c.id)}/lyrics/lookup`, { method: "POST" });
+    const data = res.ok ? await res.json() : null;
+    if (state.current?.id !== c.id) return;
+    state.current.lyrics = lyricsFrom(data);
+    if (state.current.lyrics.kind === "none") toast("No se encontró la letra de esta canción.");
+  } catch {
+    if (state.current?.id === c.id) state.current.lyrics = { kind: "none", lines: [], plain: "" };
+    toast("No se pudo buscar la letra (sin conexión al servicio).");
+  }
+  _lyricLine = -2;
+  render();
+}
+
+let _lyricLine = -2; // the line lit last (-1: before the first)
+function paintLyrics(t) {
+  const L = state.current?.lyrics;
+  if (!L || L.kind !== "synced") return;
+  const i = currentLineIndex(L.lines, t + 0.15);
+  if (i === _lyricLine) return;
+  _lyricLine = i;
+  const strip = app.querySelector(".lyr-strip");
+  if (strip) {
+    strip.querySelector(".lyr-now").textContent = L.lines[i]?.text || (i < 0 ? "♪" : "");
+    strip.querySelector(".lyr-next").textContent = L.lines[i + 1]?.text || "";
+  }
+  const list = app.querySelector(".lyr-list");
+  if (!list) return;
+  list.querySelector(".lyr-line.on")?.classList.remove("on");
+  const row = list.querySelector(`.lyr-line[data-i="${i}"]`);
+  if (!row) return;
+  row.classList.add("on");
+  // Kept in the middle of the screen, unless the finger is reading elsewhere.
+  if (performance.now() - _lyricTouched > 4000) {
+    const r = row.getBoundingClientRect();
+    const scroller = app.querySelector(".screen.scrl");
+    if (scroller) scroller.scrollBy({ top: r.top + r.height / 2 - window.innerHeight * 0.45, behavior: "smooth" });
+  }
+}
+let _lyricTouched = 0;
+
+function lyricsStrip() {
+  const L = state.current?.lyrics;
+  if (!L || L.kind !== "synced") return "";
+  const t = engine?.getCurrentTime?.() ?? 0;
+  const i = currentLineIndex(L.lines, t + 0.15);
+  return `<div class="lyr-strip" data-action="mixview" data-view="lyrics" title="Ver toda la letra">
+      <div class="lyr-now">${esc(L.lines[i]?.text || "♪")}</div>
+      <div class="lyr-next">${esc(L.lines[i + 1]?.text || "")}</div>
+    </div>`;
+}
+
+function lyricsBody() {
+  const L = state.current?.lyrics;
+  if (!state.current) return `<div class="lib-note">Elige una canción de la biblioteca.</div>`;
+  if (!L || L.kind === "loading") return `<div class="lib-note">Cargando la letra…</div>`;
+  if (L.kind === "instrumental") return `<div class="lib-note">Esta canción es instrumental: no tiene letra.</div>`;
+  if (L.kind === "plain") return `<div class="pad"><div class="lyr-plain">${esc(L.plain)}</div><div class="lyr-hint">Letra sin tiempos: no sigue la canción.</div></div>`;
+  if (L.kind === "none") {
+    return `<div class="lib-note">Esta canción no tiene letra guardada.<br><button class="lib-retry" data-action="lyrics-lookup">Buscar la letra</button></div>`;
+  }
+  const t = engine?.getCurrentTime?.() ?? 0;
+  const now = currentLineIndex(L.lines, t + 0.15);
+  return `<div class="pad lyr-list">${L.lines
+    .map((l, i) => `<div class="lyr-line${i === now ? " on" : ""}" data-action="lyric-seek" data-i="${i}" data-t="${l.time}">${esc(l.text)}</div>`)
+    .join("")}<div class="lyr-hint">Toca una línea para ir a ese momento.</div></div>`;
 }
 
 // Load a track: fetch detail, build lanes, spin up the Web Audio engine.
@@ -271,6 +389,7 @@ async function openTrack(card, { autoplay = false } = {}) {
     hasVideo: !!detail.has_video,
     analysis: extractAnalysis(detail, laneList),
   };
+  loadLyrics(card.id, !!detail.has_lyrics);
   state.current.loading = false;
   state.current.stemCount = laneList.length;
 
@@ -407,6 +526,10 @@ function stemWave(idx, color, vol, eff) {
   return out;
 }
 
+// Stems the score module can transcribe (app/score/engines.py); same list as
+// the desktop mixer's 𝄞 link (static/js/mixer.js).
+const SCORE_STEMS = new Set(["piano", "bass", "guitar", "vocals", "lead_vocals", "backing_vocals", "other"]);
+
 function stemsBody() {
   const c = state.current;
   if (!c) return `<div class="lib-note">Pick a track from your Library to start mixing.</div>`;
@@ -426,6 +549,7 @@ function stemsBody() {
       <div class="stem-top">
         <div class="stem-dot" style="background:${l.color};box-shadow:0 0 8px ${l.color}88;opacity:${eff ? 0.4 : 1}"></div>
         <div class="stem-name" style="color:${eff ? "#6a6a72" : l.color}">${esc(l.label)}</div>
+        ${SCORE_STEMS.has(l.name) ? `<a class="ms-btn ms-score" data-stem="${esc(l.name)}" href="/score/?job=${encodeURIComponent(c.id)}&stem=${encodeURIComponent(l.name)}" target="_blank" rel="noopener" title="Partitura (abre en este momento de la canción)" aria-label="Partitura de ${esc(l.label)}">𝄞</a>` : ""}
         <button class="ms-btn" style="${mOn}" data-action="mute" data-id="${l.name}">M</button>
         <button class="ms-btn" style="${sOn}" data-action="solo" data-id="${l.name}">S</button>
       </div>
@@ -486,7 +610,10 @@ function mixerScreen() {
   const sourceTag = c.sub || "—";
   const stemTag = c.stemCount ? `${c.stemCount} stems` : "";
   const dur = curDuration();
-  const body = state.mixerView === "stems" ? stemsBody() : analysisBody();
+  const body = state.mixerView === "stems" ? stemsBody() : state.mixerView === "lyrics" ? lyricsBody() : analysisBody();
+  const L = state.current?.lyrics;
+  const hasLyricsTab = !!state.current && !state.current.loading && !state.current.error;
+  const lyricsLabel = L?.kind === "loading" ? "Letra…" : "Letra";
   const ready = engineReady && engineTrackId === state.current?.id;
   const preparing = !!state.current && !state.current.loading && !state.current.error && !ready;
   const canPlay = ready;
@@ -515,16 +642,20 @@ function mixerScreen() {
         <button class="t-step" data-action="prev" ${hasPrev ? "" : "disabled"}>${ICON.prev}</button>
         <button class="t-play" data-action="play" data-playing="${state.playing}" ${canPlay ? "" : "disabled style=opacity:.45"}>${state.playing ? ICON.pause(26, "#1a1206") : ICON.play(28, "#1a1206")}</button>
         <button class="t-step" data-action="next" ${hasNext ? "" : "disabled"}>${ICON.next}</button>
+        <button class="t-step t-lock${state.locked ? " on" : ""}" data-action="lock" data-lock aria-pressed="${state.locked}" title="${state.locked ? "Bloqueado: mantén pulsado para desbloquear" : "Bloquear todo menos ▶/❚❚ y siguiente"}" aria-label="${state.locked ? "Desbloquear (mantén pulsado)" : "Bloquear controles"}">${ICON.lock(state.locked)}</button>
       </div>
+      ${state.locked ? '<div class="lock-note">Bloqueado · mantén pulsado el candado para desbloquear</div>' : ""}
+      ${lyricsStrip()}
       <div class="speed-row">
         <span class="speed-row-label">Speed</span>
-        <input type="range" class="speed-slider" data-speed min="0" max="2" step="0.25" value="${state.speed}">
+        <input type="range" class="speed-slider" data-speed min="0" max="2" step="0.25" value="${state.speed}" ${state.locked ? "disabled" : ""}>
         <span class="speed-row-val">${state.speed % 1 === 0 ? state.speed.toFixed(1) : state.speed}x</span>
       </div>
       ${keyRow()}
       ${preparing ? '<div class="mx-prep">Preparing audio…</div>' : ""}
       <div class="segmented">
         <button class="${state.mixerView === "stems" ? "on" : ""}" data-action="mixview" data-view="stems">Stems</button>
+        ${hasLyricsTab ? `<button class="${state.mixerView === "lyrics" ? "on" : ""}" data-action="mixview" data-view="lyrics">${lyricsLabel}</button>` : ""}
         <button class="${state.mixerView === "analysis" ? "on" : ""}" data-action="mixview" data-view="analysis">Analysis</button>
       </div>
     </div>
@@ -779,13 +910,64 @@ function tabBar() {
 }
 
 function render() {
+  // The scroll of the mixer survives a re-render (a tap on a lyric line, a
+  // mute): rebuilding the screen sent it back to the top.
+  const scrolled = app.querySelector(".screen.scrl")?.scrollTop || 0;
   let screen = mixerScreen();
   if (state.tab === "library") screen = libraryScreen();
   else if (state.tab === "extract") screen = extractScreen();
   app.innerHTML = screen + miniPlayer() + tabBar();
+  app.classList.toggle("locked", state.locked);
+  const scroller = app.querySelector(".screen.scrl");
+  if (scroller && scrolled) scroller.scrollTop = scrolled;
+  scroller?.addEventListener("touchmove", () => (_lyricTouched = performance.now()), { passive: true });
+  scroller?.addEventListener("wheel", () => (_lyricTouched = performance.now()), { passive: true });
   _lastPlayedBar = -1; // bars were just rebuilt; force a repaint on next tick
+  _lyricLine = -2;
   wireFaders();
   wireSwipe();
+  wireLock();
+}
+
+// The lock: a tap locks; a tap while locked only says how to unlock (a
+// stray finger must not undo it); held down 0.7 s it unlocks.
+function wireLock() {
+  const btn = app.querySelector("[data-lock]");
+  if (!btn) return;
+  let timer = null;
+  let fired = false;
+  btn.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    fired = false;
+    if (!state.locked) return;
+    timer = setTimeout(() => {
+      fired = true;
+      state.locked = false;
+      if (navigator.vibrate) navigator.vibrate(30);
+      toast("Desbloqueado");
+      render();
+    }, 700);
+  });
+  const cancel = () => {
+    clearTimeout(timer);
+    timer = null;
+  };
+  btn.addEventListener("pointerup", cancel);
+  btn.addEventListener("pointercancel", cancel);
+  btn.addEventListener("pointerleave", cancel);
+  btn.addEventListener("contextmenu", (e) => e.preventDefault());
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (fired) return;
+    if (state.locked) {
+      toast("Mantén pulsado el candado para desbloquear");
+      return;
+    }
+    state.locked = true;
+    if (navigator.vibrate) navigator.vibrate(15);
+    toast("Bloqueado: solo ▶/❚❚ y siguiente");
+    render();
+  });
 }
 
 // Suppresses the synthetic click that follows a swipe gesture, so swiping a
@@ -801,6 +983,7 @@ function wireSwipe() {
     const base = () => (state.swipedTrackId === id ? -84 : 0);
 
     row.addEventListener("pointerdown", (e) => {
+      if (state.locked) return;
       x0 = e.clientX; y0 = e.clientY; active = true; horizontal = false;
       row.style.transition = "none";
     });
@@ -904,6 +1087,7 @@ function wireFaders() {
   app.querySelectorAll("[data-fader]").forEach((el) => {
     el.addEventListener("pointerdown", (e) => {
       e.preventDefault();
+      if (state.locked) return;
       const id = el.dataset.id;
       const fill = el.querySelector(".fader-fill");
       const knob = el.querySelector(".fader-knob");
@@ -932,6 +1116,7 @@ function wireFaders() {
   const speedSlider = app.querySelector("[data-speed]");
   if (speedSlider) {
     speedSlider.addEventListener("input", () => {
+      if (state.locked) return;
       const rate = parseFloat(speedSlider.value);
       state.speed = rate;
       const valEl = speedSlider.parentElement?.querySelector(".speed-row-val");
@@ -942,7 +1127,7 @@ function wireFaders() {
 
   app.querySelectorAll("[data-key-step]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      if (!engine?.setStemPitch) return;
+      if (state.locked || !engine?.setStemPitch) return;
       const next = clampPitch(state.pitch + Number(btn.dataset.keyStep));
       if (next === state.pitch) return;
       state.pitch = next;
@@ -955,7 +1140,7 @@ function wireFaders() {
   const bars = app.querySelector("[data-seek]");
   if (bars) {
     bars.addEventListener("pointerdown", (e) => {
-      if (!engine || !curDuration()) return;
+      if (state.locked || !engine || !curDuration()) return;
       e.preventDefault();
       const rect = bars.getBoundingClientRect();
       const head = bars.querySelector(".playhead");
@@ -983,10 +1168,35 @@ function wireFaders() {
 
 app.addEventListener("click", (e) => {
   if (suppressClick) { suppressClick = false; return; }
+  // The score of a stem (𝄞): opened at this moment of the song (?t=), and
+  // the mixer stops (both would play at once).
+  const score = e.target.closest("a.ms-score");
+  if (score) {
+    if (state.locked) {
+      e.preventDefault();
+      toast("Bloqueado: mantén pulsado el candado para desbloquear");
+      return;
+    }
+    const now = engine?.getCurrentTime?.() ?? 0;
+    const url = new URL(score.href, location.href);
+    if (now > 0.5) url.searchParams.set("t", now.toFixed(1));
+    score.href = url.pathname + url.search;
+    if (engine?.isPlaying?.()) {
+      engine.pause();
+      state.playing = false;
+      setTimeout(render, 0);
+    }
+    return;
+  }
   const t = e.target.closest("[data-action]");
   if (!t) return;
   ensureAudioCtx(); // any in-app tap unlocks audio on mobile
   const a = t.dataset.action;
+  if (state.locked && !LOCKED_OK.has(a)) {
+    e.preventDefault();
+    toast("Bloqueado: mantén pulsado el candado para desbloquear");
+    return;
+  }
   // A row is swiped open: any tap other than its Delete just closes it.
   if (state.swipedTrackId && a !== "delete") {
     closeSwipe();
@@ -1007,6 +1217,20 @@ app.addEventListener("click", (e) => {
     case "mixview":
       state.mixerView = t.dataset.view;
       break;
+    case "lyric-seek": {
+      const at = Number(t.dataset.t);
+      if (engine && Number.isFinite(at)) {
+        // A breath before the line (0.1 s), so it is that line that lights.
+        engine.seek(Math.max(0, at - 0.1));
+        onEngineTime(Math.max(0, at - 0.1));
+      }
+      return;
+    }
+    case "lyrics-lookup":
+      lookUpLyrics();
+      return;
+    case "lock":
+      return; // wireLock
     case "prev":
       prevTrack();
       return;

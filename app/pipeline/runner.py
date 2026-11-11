@@ -489,6 +489,14 @@ async def _run_async(
     _set(job, status="done", progress=1.0, stage="Done")
     _write_metadata(job, job_dir)
     persist_registry(jobs_dir)
+    # A song with a piano: its score (and Pianoteq audio) prepared in the queue
+    # now, so opening it to practise finds it ready (app/api/score.py).
+    try:
+        from app.api.score import prepare_after_separation
+
+        prepare_after_separation(job)
+    except Exception:  # noqa: BLE001 -- optional; the score page can start it
+        logger.warning("[%s] could not queue the piano score", job.id, exc_info=True)
     # One-line per-job summary: the timing telemetry that makes performance
     # regressions (and the CPU-vs-GPU question) answerable from logs (#293).
     t = job.stage_timings or {}

@@ -416,3 +416,18 @@
 .app:not(.is-import) .master-strip .master-fader-track::after {
   display: none;
 }
+
+/* Score view link beside a transcribable stem's name (mixer.js makeScoreLink).
+   Icon only: the name column is narrow and clips with an ellipsis. */
+.mx-score-link {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 15px;
+  line-height: 1;
+  text-decoration: none;
+  color: inherit;
+  vertical-align: middle;
+}
+.mx-score-link:hover { background: rgba(255, 255, 255, 0.12); }

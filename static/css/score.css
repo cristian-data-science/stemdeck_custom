@@ -1,0 +1,253 @@
+/* Score view (static/score/index.html). Page chrome in the app's dark theme;
+   the score itself on paper white, the way sheet music is read. */
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans); font-size: 14px; }
+[hidden] { display: none !important; }
+.sc-muted { color: var(--muted); }
+
+.sc-top {
+  display: flex; align-items: center; gap: 16px; padding: 10px 16px;
+  background: var(--bg-2); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 20; flex-wrap: wrap;
+}
+.sc-back { color: var(--accent); text-decoration: none; font-weight: 600; white-space: nowrap; }
+.sc-title { min-width: 0; flex: 1 1 260px; }
+.sc-title h1 { font-size: 16px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sc-sub { color: var(--muted); font-size: 12px; }
+.sc-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.sc-chip {
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px;
+  padding: 3px 10px; font-size: 12px; color: var(--fg-2); white-space: nowrap;
+}
+.sc-chip b { color: var(--fg); }
+.sc-top-actions { display: flex; gap: 6px; }
+
+.sc-btn {
+  background: var(--panel-2); color: var(--fg); border: 1px solid var(--border-strong);
+  border-radius: 6px; padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer;
+  text-decoration: none; white-space: nowrap; line-height: 1.3;
+}
+.sc-btn:hover:not(:disabled) { border-color: var(--accent); }
+.sc-btn:disabled { opacity: 0.45; cursor: default; }
+.sc-btn.sc-primary { background: var(--accent); color: #111; border-color: var(--accent); font-weight: 600; }
+.sc-btn.sc-danger { color: #f3a093; }
+.sc-btn.sc-add[aria-pressed="true"] { background: var(--accent); color: #111; border-color: var(--accent); font-weight: 600; }
+.sc-adding #sc-score, .sc-adding #sc-score g.note { cursor: crosshair; }
+.sc-play { width: 40px; font-size: 16px; }
+.sc-btn.sc-mini { padding: 2px 7px; font-size: 11px; }
+
+.sc-bar {
+  display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap;
+  padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--bg);
+}
+.sc-transport { position: sticky; top: var(--sc-top-h, 53px); z-index: 15; background: var(--bg-2); }
+/* The score's own settings stay in reach while scrolling down the score; heights are
+   measured live (main.js), since every bar wraps to more rows on a tablet. */
+.sc-tools { position: sticky; top: calc(var(--sc-top-h, 53px) + var(--sc-transport-h, 52px)); z-index: 14; }
+.sc-time { font-family: var(--font-mono); font-size: 12px; color: var(--fg-2); min-width: 90px; }
+#sc-seek { flex: 1 1 200px; accent-color: var(--accent); }
+.sc-field { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
+.sc-field select, .sc-field input[type=range] { font: inherit; font-size: 12px; }
+.sc-pedal input[type=range], .sc-speed input[type=range] { width: 90px; }
+.sc-pedal output, .sc-speed output { min-width: 3.2em; font-variant-numeric: tabular-nums; }
+.sc-field select {
+  background: var(--panel); color: var(--fg); border: 1px solid var(--border-strong);
+  border-radius: 5px; padding: 3px 6px;
+}
+.sc-check { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--fg-2); }
+.sc-sep { flex: 0 0 1px; height: 22px; background: var(--border); }
+.sc-save { font-size: 12px; color: var(--muted); min-width: 120px; }
+.sc-save.ok { color: #6fcf8a; }
+.sc-save.err { color: var(--danger); }
+
+.sc-panel {
+  display: flex; gap: 10px 18px; flex-wrap: wrap; align-items: center;
+  padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.sc-help { flex-direction: column; align-items: flex-start; gap: 6px; }
+kbd {
+  background: var(--panel-3); border: 1px solid var(--border-strong); border-bottom-width: 2px;
+  border-radius: 4px; padding: 0 5px; font-family: var(--font-mono); font-size: 11px;
+}
+.sc-status { padding: 6px 16px; font-size: 12px; color: var(--fg-2); min-height: 26px; }
+
+.sc-calib-check {
+  margin: 8px 16px; padding: 10px 14px; border: 1px solid var(--gold-line);
+  background: var(--gold-soft); border-radius: 8px; font-size: 13px;
+}
+.sc-calib-check pre { white-space: pre-wrap; font-family: var(--font-sans); margin: 6px 0; }
+.sc-calib-check .ok { color: #6fcf8a; }
+.sc-calib-check .bad { color: #ff8c7a; }
+
+.sc-scroll { position: relative; padding: 12px 16px 40px; }
+.sc-score {
+  background: #fdfcf8; border-radius: 6px; padding: 12px 8px; min-height: 200px;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.4), 0 6px 24px rgba(0,0,0,0.35); outline: none;
+  user-select: none; -webkit-user-select: none;
+}
+.sc-score svg { width: 100%; height: auto; display: block; }
+.sc-band {
+  position: absolute; border: 1px dashed var(--accent); background: rgba(244,183,64,0.12);
+  pointer-events: none; z-index: 5;
+}
+
+/* Overlays drawn into Verovio's SVG by render.js */
+.sc-score .sd-pill { cursor: pointer; }
+.sc-score .sd-pill rect { fill: #111; stroke: #111; }
+.sc-score .sd-pill.hollow rect { fill: #fdfcf8; }
+.sc-score .sd-pill text {
+  fill: #fff; font-family: Inter, system-ui, sans-serif; font-weight: 700;
+  text-anchor: middle; dominant-baseline: central; pointer-events: none;
+}
+.sc-score .sd-pill.hollow text { fill: #111; }
+.sc-score g.note { cursor: pointer; }
+.sc-score .sd-hit { fill: transparent; stroke: none; pointer-events: all; }
+.sc-score g.note.sd-playing .sd-pill rect,
+.sc-score g.note.sd-playing .notehead use { fill: #e4572e; stroke: #e4572e; }
+.sc-score g.note.sd-playing .sd-pill.hollow text { fill: #fff; }
+.sc-score g.note.sd-selected .sd-pill rect,
+.sc-score g.note.sd-selected .notehead use { fill: #1f6feb; stroke: #1f6feb; }
+.sc-score g.note.sd-selected .sd-pill.hollow text { fill: #fff; }
+.sc-score g.note.sd-doomed .sd-pill rect,
+.sc-score g.note.sd-doomed .notehead use { fill: #d0312d; stroke: #d0312d; opacity: 0.85; }
+.sc-score .sd-cursor { fill: rgba(228,87,46,0.18); stroke: rgba(228,87,46,0.9); }
+.sc-score g.harm { cursor: pointer; }
+/* Chord names in a bold sans like the reference sheet. The flat/sharp glyph
+   is a tspan with its own font-family="Leipzig" attribute, which this
+   inherited value does not override. */
+.sc-score g.harm text { font-family: Inter, system-ui, sans-serif; font-weight: 700; }
+.sc-score g.harm:hover text { fill: #1f6feb; }
+.sc-score g.harm.sd-override text { fill: #7a3fbf; }
+
+.sc-landing, .sc-state { max-width: 760px; margin: 32px auto; padding: 0 16px; }
+.sc-joblist { list-style: none; padding: 0; display: grid; gap: 8px; }
+.sc-joblist a {
+  display: flex; justify-content: space-between; gap: 12px; padding: 10px 14px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--fg); text-decoration: none;
+}
+.sc-joblist a:hover { border-color: var(--accent); }
+.sc-calib { margin-top: 28px; padding: 16px; border: 1px dashed var(--border-strong); border-radius: 8px; }
+.sc-state-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 20px 24px; }
+.sc-state-card h2 { margin-top: 0; }
+.sc-progress { height: 8px; background: var(--panel-3); border-radius: 4px; overflow: hidden; margin: 14px 0; }
+.sc-progress div { height: 100%; width: 0; background: var(--accent); transition: width 0.3s; }
+.sc-error { white-space: pre-wrap; color: #ff8c7a; font-size: 12px; background: var(--bg); padding: 8px; border-radius: 6px; }
+
+.sc-diag { margin: 0 16px 24px; color: var(--fg-2); font-size: 13px; }
+.sc-diag summary { cursor: pointer; color: var(--muted); }
+.sc-diag table { border-collapse: collapse; margin-top: 8px; }
+.sc-diag td { padding: 3px 12px 3px 0; border-bottom: 1px solid var(--border); }
+.sc-diag .warn { color: #ffb36b; }
+
+.sc-dialog {
+  background: var(--panel); color: var(--fg); border: 1px solid var(--border-strong);
+  border-radius: 10px; padding: 18px; min-width: 320px;
+}
+.sc-dialog::backdrop { background: rgba(0,0,0,0.55); }
+.sc-dialog h3 { margin: 0 0 10px; }
+.sc-dialog input {
+  width: 100%; font: inherit; font-size: 16px; padding: 6px 8px; border-radius: 6px;
+  border: 1px solid var(--border-strong); background: var(--bg); color: var(--fg);
+}
+.sc-dialog-actions { display: flex; gap: 6px; margin-top: 14px; flex-wrap: wrap; }
+
+@media print {
+  .sc-top, .sc-bar, .sc-panel, .sc-status, .sc-diag, .sc-calib-check { display: none !important; }
+  html, body { background: #fff; }
+  .sc-scroll { padding: 0; }
+  .sc-score { box-shadow: none; padding: 0; }
+  .sc-score .sd-cursor { display: none; }
+}
+
+.sc-source-pick { display: flex; margin: 0 0 12px; }
+.sc-reextract { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; font-size: 13px; }
+.sc-reextract select { background: var(--panel); color: var(--fg); border: 1px solid var(--border-strong); border-radius: 5px; padding: 3px 6px; }
+
+/* Notas cayendo (static/js/score/fall.js) */
+.sc-jumps { display: inline-flex; gap: 4px; }
+.sc-jumps .sc-btn { min-width: 38px; font-variant-numeric: tabular-nums; }
+.sc-fall { position: relative; height: 60vh; min-height: 320px; margin: 0 12px 12px;
+  border-radius: 10px; overflow: hidden; background: #101014; touch-action: manipulation; }
+.sc-fall-canvas { display: block; }
+.sc-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin: 0 4px 0 10px; }
+.sc-swatch-r { background: #4f9dff; }
+.sc-swatch-l { background: #3ecf8e; }
+/* In the piano view the score and its editing tools step aside. */
+.sc-fall-mode .sc-tools, .sc-fall-mode #sc-scroll, .sc-fall-mode #sc-status,
+.sc-fall-mode #sc-clean, .sc-fall-mode #sc-help, .sc-fall-mode #sc-calib-check,
+.sc-fall-mode #sc-diag, .sc-fall-mode .sc-follow-zoom { display: none !important; }
+/* Floating edit bar: delete on a tablet, where there is no Supr key. */
+.sc-editbar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 20;
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; border-radius: 12px;
+  background: #1c1c22; border: 1px solid rgba(255,255,255,0.14); box-shadow: 0 8px 28px rgba(0,0,0,0.45); }
+.sc-editbar[hidden] { display: none; }
+.sc-editbar .sc-btn { min-height: 38px; }
+.sc-fall, .sc-score g.note { touch-action: none; }
+.sc-fall-mode .sc-editbar { bottom: 200px; } /* above the keyboard, not over its keys */
+/* Deleted notes («Borradas») */
+.sc-trash { flex-direction: column; align-items: stretch; max-height: 40vh; overflow: auto; }
+.sc-trash-head { display: flex; align-items: center; gap: 12px; }
+.sc-trash-head .sc-primary { margin-left: auto; }
+.sc-trash-list { list-style: none; margin: 6px 0 0; padding: 0; }
+.sc-trash-list li { display: flex; align-items: center; gap: 12px; padding: 6px 2px; border-top: 1px solid rgba(255,255,255,0.08); }
+.sc-trash-list li b { min-width: 4.5em; }
+.sc-trash-list li .sc-btn { margin-left: auto; }
+/* «Controles ▴/▾»: collapsed, only the playback line stays (play, jumps, view,
+   time, Escuchar); speed, sync, follow/zoom and the settings bars hide. */
+.sc-compact .sc-tools, .sc-compact #sc-fall-bar, .sc-compact .sc-transport .sc-speed,
+.sc-compact .sc-transport .sc-follow-zoom { display: none !important; }
+/* Experimental: import a printed score; fingers in the edit bar */
+.sc-sheet-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 8px 0; }
+.sc-sheet-row input[type=text] { width: 16em; }
+.sc-sheet-row input[type=number] { width: 5em; }
+.sc-sheet-status.ok { color: #3ecf8e; }
+.sc-sheet-status.err { color: #e4572e; }
+.sc-exp { font-size: 11px; font-weight: 600; color: #1a1206; background: #f5b417; border-radius: 6px; padding: 1px 6px; vertical-align: 3px; }
+.sc-editbar-fingers { display: inline-flex; align-items: center; gap: 4px; }
+.sc-editbar-fingers[hidden] { display: none; }
+.sc-editbar-fingers .sc-btn { min-width: 34px; min-height: 34px; }
+#sc-resep-status.ok { color: #3ecf8e; }
+#sc-resep-status.err { color: #e4572e; }
+#sc-resep a.sc-btn { text-decoration: none; }
+/* Practice bar: loop over bars, hands, metronome, count-in, MIDI keyboard */
+.sc-practice-bar { background: var(--bg-2); }
+.sc-practice-group { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.sc-practice-label { font-size: 12px; color: var(--muted); font-weight: 600; }
+.sc-practice-bar select { background: var(--panel); color: var(--fg); border: 1px solid var(--border-strong);
+  border-radius: 5px; padding: 3px 6px; font: inherit; font-size: 12px; }
+#sc-loop-toggle[aria-pressed="true"] { background: var(--accent); color: #111; border-color: var(--accent); }
+#sc-loop-label { min-width: 7em; font-variant-numeric: tabular-nums; }
+#sc-midi-connect[aria-pressed="true"] { border-color: #3ecf8e; color: #3ecf8e; }
+#sc-midi-status.ok { color: #3ecf8e; }
+#sc-midi-status.wait { color: var(--accent); font-weight: 600; }
+.sc-compact #sc-practice-bar .sc-field, .sc-compact #sc-practice-bar .sc-check,
+.sc-compact #sc-practice-bar #sc-midi-wrap { display: none !important; }
+/* The /score/ list: what each song has ready, and its practice */
+.sc-badge { display: inline-block; font-size: 11px; border-radius: 6px; padding: 1px 6px; margin-left: 6px;
+  background: var(--panel-3); color: var(--fg-2); vertical-align: 1px; }
+.sc-badge.ok { background: rgba(62,207,142,0.16); color: #3ecf8e; }
+.sc-badge.run { background: rgba(245,180,23,0.16); color: var(--accent); }
+/* Top right: «Ocultar paneles» and «Pantalla completa» */
+.sc-view-actions { display: flex; gap: 6px; margin-left: auto; }
+.sc-view-actions .sc-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+/* «Ocultar paneles»: every bar and panel steps aside but one line, over the
+   view (the piano or the score fills the screen under it). */
+.sc-minibar { position: fixed; top: 0; left: 0; right: 0; z-index: 30; display: flex; align-items: center; gap: 10px;
+  padding: 5px 10px; background: rgba(12,12,16,0.72); backdrop-filter: blur(6px);
+  border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 13px; }
+.sc-minibar[hidden] { display: none; }
+.sc-minibar .sc-btn { padding: 3px 9px; font-size: 12px; }
+.sc-mini-play { min-width: 34px; }
+.sc-mini-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg-2);
+  font-variant-numeric: tabular-nums; }
+.sc-mini-text b { color: var(--fg); }
+.sc-bare .sc-top, .sc-bare .sc-transport, .sc-bare #sc-practice-bar, .sc-bare #sc-fall-bar, .sc-bare .sc-tools,
+.sc-bare #sc-status, .sc-bare #sc-diag, .sc-bare #sc-help, .sc-bare #sc-clean, .sc-bare #sc-calib-check,
+.sc-bare #sc-trash, .sc-bare #sc-editbar, .sc-bare #sc-pt-status { display: none !important; }
+.sc-bare .sc-main { padding-top: 34px; }
+.sc-bare.sc-fall-mode .sc-main { padding-top: 0; }
+.sc-bare .sc-fall { margin: 0; border-radius: 0; }
+/* Full screen: the piano edge to edge */
+.sc-fs .sc-fall { margin: 0; border-radius: 0; }

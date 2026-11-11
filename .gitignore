@@ -48,6 +48,8 @@ data/
 jobs/
 cache/
 models/
+# ...except the Basic Pitch model the score module ships in the repo (230 KB).
+!app/score/models/
 settings.json
 .run/
 .build
@@ -90,3 +92,7 @@ Thumbs.db
 
 # Imported design references (kept local, not shipped)
 design/
+
+# YouTube login cookies for yt-dlp (scripts/windows/dev-start.ps1). A credential: never commit.
+youtube-cookies.txt
+*cookies*.txt

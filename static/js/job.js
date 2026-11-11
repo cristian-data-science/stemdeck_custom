@@ -631,10 +631,34 @@ async function cancelCurrentJob() {
   }
 }
 
+/** The separation model picked in the composer («Modelo»): "demucs" unless
+ *  RoFormer is installed and chosen (experimental; app/experimental/separation.py). */
+function separatorChoice() {
+  const pick = document.getElementById("separatorPick");
+  const sel = document.getElementById("separatorSelect");
+  return pick && !pick.hidden && sel ? sel.value : "demucs";
+}
+
+async function wireSeparatorPick() {
+  const pick = document.getElementById("separatorPick");
+  const sel = document.getElementById("separatorSelect");
+  if (!pick || !sel) return;
+  try {
+    const res = await fetch("/api/experimental/separation");
+    if (!res.ok || !(await res.json()).available) return;
+  } catch {
+    return;
+  }
+  sel.value = localStorage.getItem("stemdeck.separator") === "roformer" ? "roformer" : "demucs";
+  sel.addEventListener("change", () => localStorage.setItem("stemdeck.separator", sel.value));
+  pick.hidden = false;
+}
+
 async function postFileJob(file) {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("stems", JSON.stringify([...selectedStems]));
+  fd.append("separator", separatorChoice());
   const res = await fetch("/api/jobs", { method: "POST", body: fd });
   const data = await res.json();
   if (!res.ok) throw new Error(data.detail || res.statusText);
@@ -738,6 +762,7 @@ export async function importFromUrl(url, { title, stems } = {}) {
 
 export function wireJobForm() {
   jobCancelBtn.addEventListener("click", cancelCurrentJob);
+  wireSeparatorPick();
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -821,12 +846,13 @@ export function wireJobForm() {
       fetchInit = {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stems: [...selectedStems] }),
+        body: JSON.stringify({ stems: [...selectedStems], separator: separatorChoice() }),
       };
     } else if (file) {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("stems", JSON.stringify([...selectedStems]));
+      fd.append("separator", separatorChoice());
       fetchInit = { method: "POST", body: fd };
     } else {
       fetchInit = {
@@ -837,6 +863,7 @@ export function wireJobForm() {
           // Backend uses this to decide whether to ffmpeg-amix a
           // "selected stems" track (mix.wav) at the end of the pipeline.
           stems: [...selectedStems],
+          separator: separatorChoice(),
         }),
       };
     }

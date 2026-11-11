@@ -134,6 +134,15 @@
                 <span data-i18n="stem.other">Other</span>
               </button>
             </div>
+            <!-- Which model separates (experimental, only when BS-RoFormer is
+                 installed: app/experimental/separation.py). Remembered. -->
+            <label class="daw-separator-pick" id="separatorPick" hidden title="Which model separates the stems" data-i18n-title="extract.modelTitle">
+              <span data-i18n="extract.model">Model</span>
+              <select id="separatorSelect">
+                <option value="demucs" data-i18n="extract.modelDemucs">Demucs</option>
+                <option value="roformer" data-i18n="extract.modelRoformer">RoFormer (keys and guitar)</option>
+              </select>
+            </label>
             <button class="stem-more-btn" id="stemMoreBtn" type="button" aria-haspopup="true" aria-expanded="false"
                     aria-controls="stemOverflow" title="More stems" data-i18n-title="extract.moreAria"
                     aria-label="More stems" data-i18n-aria-label="extract.moreAria" hidden>
