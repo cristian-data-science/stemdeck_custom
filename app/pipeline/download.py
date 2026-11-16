@@ -132,7 +132,9 @@ def _cancellable(job: Job, fn):
 
 # YouTube refusing to serve us at all, as opposed to a video being unavailable.
 # Cookies are the only remedy in-tree: yt-dlp ships no PO token generator.
-_BOT_CHECK = ("sign in to confirm", "http error 429", "too many requests")
+# "Please sign in" is the same refusal worded differently (iPBLZuoudS8, a public
+# video, 2026-11-11): without it the cookies were never tried.
+_BOT_CHECK = ("sign in to confirm", "please sign in", "http error 429", "too many requests")
 
 # What a missing challenge solver looks like once cookies ARE in play.
 _NEEDS_SOLVER = (

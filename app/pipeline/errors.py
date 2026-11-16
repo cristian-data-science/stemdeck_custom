@@ -73,6 +73,7 @@ _CAUSE_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
             # Apostrophe-insensitive: yt-dlp's wording is "Sign in to confirm
             # you're not a bot", and the quoting has changed between releases.
             "sign in to confirm",
+            "please sign in",
             "http error 429",
             "too many requests",
         ),

@@ -131,6 +131,7 @@ def test_the_original_error_is_chained(job, monkeypatch):
     "text",
     [
         "ERROR: [youtube] abc: Sign in to confirm you're not a bot.",
+        "ERROR: [youtube] iPBLZuoudS8: Please sign in. Use --cookies-from-browser or --cookies for the authentication.",
         "HTTP Error 429: Too Many Requests",
         "ERROR: too many requests, try again later",
     ],

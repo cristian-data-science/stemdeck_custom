@@ -92,6 +92,9 @@ def main() -> None:
 
     from demucs.pretrained import get_model
 
+    from app.pipeline.demucs_weights import ensure_checkpoints
+
+    ensure_checkpoints(DEMUCS_MODEL)  # Meta first, mirror if Meta fails
     model = get_model(DEMUCS_MODEL)
     model.eval()
     model.cpu()
