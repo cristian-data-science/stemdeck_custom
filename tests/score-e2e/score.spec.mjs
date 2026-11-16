@@ -200,6 +200,76 @@ test("undo and redo, saved too", async ({ page }) => {
   expect(server.notes.find((n) => n.id === id).midi).toBe(73);
 });
 
+test("undo on a tablet: ↶ on the playback bar in the piano view, a two-finger tap; three fingers redo", async ({ page }) => {
+  await open(page);
+  const id = await clickNote(page, (n) => n.midi === 72 && n.staff === 1);
+  await page.keyboard.press("ArrowUp");
+  await savedOk(page);
+  await page.locator("#sc-view-toggle").click(); // the score's tool bar (↶ Deshacer) is hidden here
+  await expect(page.locator("#sc-undo")).toBeHidden();
+  await expect(page.locator("#sc-undo2")).toBeVisible();
+  await expect(page.locator("#sc-undo2")).toHaveAttribute("title", /Deshacer: Semitono|Deshacer: /);
+  const midi = async () => (await (await page.request.get(API)).json()).notes.find((n) => n.id === id).midi;
+  await page.locator("#sc-undo2").click();
+  await expect(page.locator("#sc-toast")).toContainText("Deshecho");
+  await expect.poll(midi).toBe(72);
+  await page.locator("#sc-redo2").click();
+  await expect.poll(midi).toBe(73);
+  // Fingers on the lane: two tap = undo, three tap = redo (nothing else moves).
+  const r = await page.locator(".sc-fall-canvas").boundingBox();
+  const taps = (n) => page.evaluate(({ x, y, n }) => {
+    const el = document.querySelector("#sc-fall");
+    const ev = (type, i) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x + i * 60, clientY: y, button: 0, pointerId: 30 + i, pointerType: "touch", isPrimary: i === 0 }));
+    for (let i = 0; i < n; i++) ev("pointerdown", i);
+    for (let i = 0; i < n; i++) ev("pointerup", i);
+  }, { x: r.x + r.width / 3, y: r.y + r.height / 3, n });
+  const ahead = await page.evaluate(() => window.__fall.lookahead);
+  await taps(2);
+  await expect.poll(midi).toBe(72);
+  await taps(3);
+  await expect.poll(midi).toBe(73);
+  expect(await page.evaluate(() => window.__fall.lookahead)).toBe(ahead); // not a pinch
+});
+
+test("🕘 Historial: every saved edit, named, kept after a reload; back to before one; back to the original", async ({ page }) => {
+  await open(page);
+  const total = await page.evaluate(() => window.__score.notes.length);
+  const id = await clickNote(page, (n) => n.midi === 72 && n.staff === 1);
+  await page.keyboard.press("ArrowUp");
+  await savedOk(page);
+  await clickNote(page, (n) => n.midi === 65);
+  await page.keyboard.press("Delete");
+  await savedOk(page);
+  await page.reload(); // the page's own undo is gone; the history is not
+  await page.waitForFunction(() => window.__score?.data);
+  await page.locator("#sc-view-toggle").click();
+  await page.locator("#sc-history-toggle").click();
+  const rows = page.locator("#sc-history-list li");
+  // The newest two are these (the shared test server keeps other tests' edits below).
+  await expect(rows.nth(1)).toBeVisible();
+  const count = await rows.count();
+  await expect(rows.nth(0)).toContainText("borrada");
+  await expect(rows.nth(0)).toContainText("−");
+  await expect(rows.nth(1)).toContainText("→"); // the pitch change, named before → after
+  // Back to before the first edit (both undone), asked first.
+  await rows.nth(1).getByRole("button").click();
+  await page.locator('#sc-confirm button[value="ok"]').click();
+  await expect(page.locator("#sc-toast")).toContainText("Volver a antes de");
+  await expect.poll(() => page.evaluate(() => window.__score.notes.length)).toBe(total);
+  expect(await page.evaluate((id) => window.__score.notes.find((n) => n.id === id).midi, id)).toBe(72);
+  await expect(rows).toHaveCount(count + 1);
+  // ↶ undoes that too.
+  await page.locator("#sc-undo2").click();
+  await expect.poll(() => page.evaluate(() => window.__score.notes.length)).toBe(total - 1);
+  // «Volver al original»: the transcription, no edit at all.
+  await page.locator("#sc-history-reset").click();
+  await page.locator('#sc-confirm button[value="ok"]').click();
+  await expect(page.locator("#sc-toast")).toContainText("sin ediciones");
+  await expect.poll(() => page.evaluate(() => window.__score.notes.length)).toBe(total);
+  expect(await page.evaluate((id) => window.__score.notes.find((n) => n.id === id).midi, id)).toBe(72);
+  await expect(rows.first()).toContainText("Restaurar original");
+});
+
 test("area selection and bulk delete", async ({ page }) => {
   await open(page);
   // Select every note of bar 5 (the eighths) with a drag over its pills.
@@ -405,25 +475,27 @@ test("pedal slider: 0 % by default, held notes, saved", async ({ page }) => {
   await expect(page.locator("#sc-pedal-wrap")).toHaveAttribute("title", /100 %/);
 });
 
-test("speed slider: slower playback, pitch kept, remembered", async ({ page }) => {
+test("speed: four fixed speeds (25, 50, 70, 100 %), slower playback, pitch kept, remembered", async ({ page }) => {
   await open(page);
-  await expect(page.locator("#sc-speed")).toHaveValue("100");
-  await page.locator("#sc-speed").fill("40");
-  await expect(page.locator("#sc-speed-val")).toHaveText("40 %");
+  const pressed = () => page.locator('[data-speed][aria-pressed="true"]');
+  await expect(pressed()).toHaveText(/^100 %/);
+  expect(await page.locator("[data-speed]").evaluateAll((bs) => bs.map((b) => b.dataset.speed))).toEqual(["25", "50", "70", "100"]);
+  await page.locator('[data-speed="50"]').click();
+  await expect(pressed()).toHaveText(/^50 %/);
   const audio = () => page.evaluate(() => ({ rate: document.querySelector("#sc-audio").playbackRate, keep: document.querySelector("#sc-audio").preservesPitch }));
-  expect(await audio()).toEqual({ rate: 0.4, keep: true });
-  // It really plays slower: ~0.4 s of song per second.
+  expect(await audio()).toEqual({ rate: 0.5, keep: true });
+  // It really plays slower: ~0.5 s of song per second.
   await page.evaluate(() => { const a = document.querySelector("#sc-audio"); a.muted = true; return a.play(); });
   const t0 = await page.evaluate(() => document.querySelector("#sc-audio").currentTime);
   await page.waitForTimeout(1500);
   const t1 = await page.evaluate(() => document.querySelector("#sc-audio").currentTime);
   await page.evaluate(() => document.querySelector("#sc-audio").pause());
-  expect(t1 - t0).toBeGreaterThan(0.4);
-  expect(t1 - t0).toBeLessThan(0.9);
+  expect(t1 - t0).toBeGreaterThan(0.5);
+  expect(t1 - t0).toBeLessThan(1.05);
   await page.reload();
   await page.waitForFunction(() => window.__score?.data);
-  await expect(page.locator("#sc-speed")).toHaveValue("40");
-  expect((await audio()).rate).toBe(0.4);
+  await expect(pressed()).toHaveText(/^50 %/);
+  expect((await audio()).rate).toBe(0.5);
 });
 
 test("piano view: falling notes at the same point, options remembered, back to the score", async ({ page }) => {
@@ -561,6 +633,145 @@ test("piano view: tap a falling note, delete it with 🗑, drag another one key 
   const now = await page.evaluate((id) => window.__score.notes.find((n) => n.id === id), b.id);
   expect(now.midi).toBe(was.midi + 1);
   expect(now.start).toBeCloseTo(was.start, 2);
+});
+
+test("piano view: a tap on a falling note while it plays pauses the song there and selects it", async ({ page }) => {
+  await open(page);
+  await page.waitForFunction(() => document.querySelector("#sc-audio").readyState >= 1);
+  await page.locator("#sc-view-toggle").click();
+  await page.evaluate(() => { document.querySelector("#sc-audio").currentTime = 2.0; });
+  await expect.poll(() => page.evaluate(() => window.__fall.hits.length)).toBeGreaterThan(2);
+  await page.waitForTimeout(400);
+  await page.locator("#sc-play").click();
+  await expect.poll(() => page.evaluate(() => window.__player.playing)).toBe(true);
+  const a = await page.evaluate(() => {
+    const r = document.querySelector(".sc-fall-canvas").getBoundingClientRect();
+    const h = [...window.__fall.hits].sort((a, b) => b.h - a.h)[0];
+    return { id: h.id, x: r.left + h.x + h.w / 2, y: r.top + Math.max(h.y, 0) + h.h / 2 };
+  });
+  await page.mouse.click(a.x, a.y);
+  await expect.poll(() => page.evaluate(() => window.__player.playing)).toBe(false);
+  await expect(page.locator("#sc-editbar")).toBeVisible();
+  await expect(page.locator("#sc-editbar-n")).toHaveText("1 nota");
+  // A drag while it plays still moves the song (and it plays on after).
+  await page.locator("#sc-edit-clear").click();
+  await page.locator("#sc-play").click();
+  await expect.poll(() => page.evaluate(() => window.__player.playing)).toBe(true);
+  const r = await page.locator(".sc-fall-canvas").boundingBox();
+  await page.mouse.move(r.x + 20, r.y + 60);
+  await page.mouse.down();
+  for (let i = 1; i <= 5; i++) await page.mouse.move(r.x + 20, r.y + 60 + i * 12);
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => window.__player.playing)).toBe(true);
+});
+
+test("piano view: a double click or double tap on the empty background pauses, again plays", async ({ page }) => {
+  await open(page);
+  await page.waitForFunction(() => document.querySelector("#sc-audio").readyState >= 1);
+  await page.locator("#sc-view-toggle").click();
+  await page.waitForTimeout(400);
+  const r = await page.locator(".sc-fall-canvas").boundingBox();
+  const at = { x: r.x + 8, y: r.y + 40 }; // the edge of the lane: no note there
+  const playing = () => page.evaluate(() => window.__player.playing);
+  await page.mouse.dblclick(at.x, at.y);
+  await expect.poll(playing).toBe(true);
+  await page.mouse.dblclick(at.x, at.y);
+  await expect.poll(playing).toBe(false);
+  // Two taps far apart in time are two taps, not a double tap.
+  await page.mouse.click(at.x, at.y);
+  await page.waitForTimeout(700);
+  await page.mouse.click(at.x, at.y);
+  await page.waitForTimeout(300);
+  expect(await playing()).toBe(false);
+  // A finger: the same pointer events, touch type.
+  const tap = () => page.evaluate(({ x, y }) => {
+    const el = document.querySelector("#sc-fall");
+    for (const type of ["pointerdown", "pointerup"]) {
+      el.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x, clientY: y, button: 0, pointerId: 7, pointerType: "touch", isPrimary: true }));
+    }
+  }, at);
+  await page.waitForTimeout(500);
+  await tap();
+  await tap();
+  await expect.poll(playing).toBe(true);
+  await tap();
+  await tap();
+  await expect.poll(playing).toBe(false);
+});
+
+test("messages that come and go float: the page never grows a scrollbar for them", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await open(page);
+  await page.locator("#sc-view-toggle").click();
+  await page.waitForTimeout(400);
+  const size = () => page.evaluate(() => [document.documentElement.scrollHeight, innerHeight, document.querySelector(".sc-fall-canvas").getBoundingClientRect().width]);
+  const before = await size();
+  expect(before[0]).toBe(before[1]);
+  await page.evaluate(() => {
+    const long = "Pianoteq: generando con Bösendorfer VC Player (solo mano derecha) a 75 %… 38 s (mientras, suena el MIDI)";
+    const pt = document.querySelector("#sc-pt-status");
+    pt.hidden = false;
+    pt.textContent = long;
+    document.querySelector("#sc-hands-msg").textContent = "Mano derecha: 1 nota · guardando… · el programa ajustó además 4 notas";
+  });
+  await page.waitForTimeout(300);
+  expect(await size()).toEqual(before);
+});
+
+test("hands: the edit bar sets a note's hand, and Auto gives it back to the program", async ({ page }) => {
+  await open(page);
+  const id = await clickNote(page, (n) => n.midi === 67 && n.staff === 1);
+  const get = async () => (await notes(page)).find((n) => n.id === id);
+  await expect(page.locator("#sc-editbar")).toBeVisible();
+  await page.locator('#sc-editbar [data-sethand="L"]').click();
+  await savedOk(page);
+  expect((await get()).hand).toBe("L");
+  expect((await get()).staff).toBe(2);
+  await page.locator('#sc-editbar [data-sethand=""]').click();
+  await savedOk(page);
+  expect((await get()).hand).toBe(null);
+  expect((await get()).staff).toBe(1); // G4: back above the split
+});
+
+test("piano view: 🖌 Corregir manos paints the notes a stroke crosses, colours by hand, own colours", async ({ page }) => {
+  await open(page);
+  await page.waitForFunction(() => document.querySelector("#sc-audio").readyState >= 1);
+  await page.locator("#sc-view-toggle").click();
+  await page.evaluate(() => { document.querySelector("#sc-audio").currentTime = 2.0; });
+  await expect.poll(() => page.evaluate(() => window.__fall.hits.length)).toBeGreaterThan(2);
+  await page.waitForTimeout(400); // the piano settles its height first
+  await page.locator("#sc-paint").click();
+  await expect(page.locator("#sc-paint-pick")).toBeVisible();
+  await expect(page.locator("#sc-fall-colors")).toHaveValue("hands"); // painting shows the hands
+  await page.locator('#sc-paint-pick [data-paint="L"]').click();
+  // Two right-hand bars, one stroke from the first to the second.
+  const two = await page.evaluate(() => {
+    const r = document.querySelector(".sc-fall-canvas").getBoundingClientRect();
+    const right = new Set(window.__score.notes.filter((n) => n.staff === 1).map((n) => n.id));
+    const hs = window.__fall.hits.filter((h) => right.has(h.id) && h.y + h.h > 20).sort((a, b) => b.h - a.h).slice(0, 2);
+    return hs.map((h) => ({ id: h.id, x: r.left + h.x + h.w / 2, y: r.top + Math.max(h.y, 0) + 10 }));
+  });
+  expect(two.length).toBe(2);
+  await page.mouse.move(two[0].x, two[0].y);
+  await page.mouse.down();
+  for (let i = 1; i <= 8; i++) await page.mouse.move(two[0].x + ((two[1].x - two[0].x) * i) / 8, two[0].y + ((two[1].y - two[0].y) * i) / 8);
+  await page.mouse.up();
+  await expect(page.locator("#sc-hands-msg")).toContainText("Mano corregida");
+  const after = await notes(page);
+  for (const { id } of two) {
+    const n = after.find((x) => x.id === id);
+    expect([n.hand, n.staff]).toEqual(["L", 2]);
+  }
+  // A stroke does not move the song.
+  await expect(page.locator("#sc-status")).not.toContainText("⇅");
+  // Own colours: the swatches follow, ↺ goes back.
+  await page.locator("#sc-color-l").evaluate((el) => { el.value = "#ff0000"; el.dispatchEvent(new Event("input", { bubbles: true })); });
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--hand-l").trim())).toBe("#ff0000");
+  await expect(page.locator("#sc-color-reset")).toBeVisible();
+  await page.locator("#sc-color-reset").click();
+  await expect(page.locator("#sc-color-l")).toHaveValue("#3ecf8e");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#sc-paint-pick")).toBeHidden();
 });
 
 test("piano view: drag a note's bottom edge down onto the note before on its key: one note", async ({ page }) => {
@@ -761,7 +972,7 @@ test("Borradas: deleted notes listed, restore one, then all", async ({ page }) =
   expect(await page.evaluate((ids) => ids.every((id) => window.__score.notes.some((n) => n.id === id)), ids)).toBe(true);
 });
 
-test("Pianoteq after an edit: the MIDI plays the edit until the new render is back", async ({ page, request }) => {
+test("Pianoteq after deleting a note: the current file keeps playing, said, until the new one takes over", async ({ page, request }) => {
   const info = await (await request.get("/api/score/pianoteq")).json();
   test.skip(!info.available, "Pianoteq is not installed on this machine");
   test.setTimeout(120_000);
@@ -771,11 +982,103 @@ test("Pianoteq after an edit: the MIDI plays the edit until the new render is ba
   const first = await page.evaluate(() => document.querySelector("#sc-audio").src);
   await clickNote(page, (n) => n.midi === 65);
   await page.keyboard.press("Delete");
-  // At once: the old render is muted and the synth (with the edit) takes over.
-  expect(await page.evaluate(() => window.__player.ptStale && document.querySelector("#sc-audio").muted)).toBe(true);
+  // At once: Pianoteq's file still plays (no jump to the synth, the rhythm
+  // kept), and the floating status says the note is being taken out.
+  expect(await page.evaluate(() => !window.__player.ptStale && !document.querySelector("#sc-audio").muted)).toBe(true);
+  await expect(page.locator("#sc-pt-status")).toContainText("quitando 1 nota");
+  await expect(page.locator("#sc-pt-status")).toContainText("sigue sonando la pista actual");
   await expect.poll(() => page.evaluate(() => document.querySelector("#sc-audio").src), { timeout: 60_000 }).not.toBe(first);
-  await expect.poll(() => page.evaluate(() => window.__player.ptStale)).toBe(false);
-  expect(await page.evaluate(() => document.querySelector("#sc-audio").muted)).toBe(false);
+  await expect(page.locator("#sc-pt-status")).toContainText("nota quitada ✓");
+  expect(await page.evaluate(() => window.__player.ptStale || document.querySelector("#sc-audio").muted)).toBe(false);
+  // Another kind of edit: the synth plays it at once, as before.
+  await clickNote(page, (n) => n.midi > 65);
+  await page.keyboard.press("ArrowUp");
+  expect(await page.evaluate(() => window.__player.ptStale && document.querySelector("#sc-audio").muted)).toBe(true);
+});
+
+test("deleted on Pianoteq, then «MIDI» chosen while it renders: the MIDI never plays the deleted note", async ({ page, request }) => {
+  const info = await (await request.get("/api/score/pianoteq")).json();
+  test.skip(!info.available, "Pianoteq is not installed on this machine");
+  test.setTimeout(120_000);
+  await open(page);
+  await page.evaluate(async () => {
+    const { Player } = await import("/js/score/player.js");
+    window.__voiced = new Set();
+    const v = Player.prototype._voice;
+    Player.prototype._voice = function (n, when, dur) { window.__voiced.add(n.id); return v.call(this, n, when, dur); };
+  });
+  await page.locator("#sc-source").selectOption("pianoteq");
+  await expect(page.locator("#sc-pt-status")).toContainText("✓", { timeout: 60_000 });
+  const first = await page.evaluate(() => document.querySelector("#sc-audio").src);
+  const target = await page.evaluate(() => window.__score.notes.filter((n) => n.start > 3.5 && n.start < 6).sort((a, b) => a.start - b.start)[0]);
+  await clickNote(page, `(n) => n.id === "${target.id}"`);
+  await page.keyboard.press("Delete");
+  await expect(page.locator("#sc-pt-status")).toContainText("quitando 1 nota");
+  // Switched to the MIDI while Pianoteq is still rendering without it.
+  await page.locator("#sc-source").selectOption("midi");
+  expect(await page.evaluate(() => window.__player.synthOnly)).toBe(true);
+  await page.evaluate((t) => window.__player.seek(t - 1), target.start);
+  await page.locator("#sc-play").click();
+  await page.waitForFunction((t) => window.__player.time > t + 0.5, target.start, { timeout: 15_000 });
+  await page.locator("#sc-play").click();
+  expect(await page.evaluate((id) => window.__voiced.has(id), target.id)).toBe(false);
+  expect(await page.evaluate(() => window.__voiced.size)).toBeGreaterThan(0); // the others did sound
+  // The render went on behind: back on «Pianoteq», the file without the note.
+  await page.locator("#sc-source").selectOption("pianoteq");
+  await expect.poll(() => page.evaluate(() => document.querySelector("#sc-audio").src), { timeout: 60_000 }).not.toBe(first);
+  expect(await page.evaluate(() => window.__player.ptStale)).toBe(false);
+});
+
+test("«🔇 Silenciar» on Pianoteq: the hand's render is made beforehand, so no MIDI stands in", async ({ page, request }) => {
+  const info = await (await request.get("/api/score/pianoteq")).json();
+  test.skip(!info.available, "Pianoteq is not installed on this machine");
+  test.setTimeout(180_000);
+  const asked = new Set();
+  page.on("request", (r) => {
+    if (r.method() === "POST" && r.url().endsWith("/pianoteq")) asked.add(JSON.parse(r.postData() || "{}").hand ?? "both");
+  });
+  await open(page);
+  await page.locator("#sc-source").selectOption("pianoteq");
+  await expect(page.locator("#sc-pt-status")).toContainText("✓", { timeout: 60_000 });
+  const first = await page.evaluate(() => document.querySelector("#sc-audio").src);
+  const preset = await page.locator("#sc-pt-preset").inputValue();
+  // The server renders each hand alone (and each speed) after the full
+  // render, by itself (app/api/score.py _pt_background): the page never asks.
+  expect(asked.has("L") || asked.has("R")).toBe(false);
+  for (const hand of ["L", "R"]) {
+    await expect
+      .poll(async () => (await (await request.post(`${API}/pianoteq`, { data: { preset, hand } })).json()).state, { timeout: 90_000, intervals: [2000] })
+      .toBe("ready");
+  }
+  await page.evaluate(() => {
+    window.__staleCalls = [];
+    const p = window.__player;
+    const orig = p.setPianoteqStale.bind(p);
+    p.setPianoteqStale = (v) => (window.__staleCalls.push(v), orig(v));
+  });
+  await page.locator('[data-mute="L"]').click();
+  await expect.poll(() => page.evaluate(() => document.querySelector("#sc-audio").src), { timeout: 10_000 }).not.toBe(first);
+  expect(await page.evaluate(() => window.__staleCalls.includes(true))).toBe(false); // the synth never took over
+  expect(await page.evaluate(() => window.__player.silentStaff)).toBe(2);
+  // The left hand silenced: Pianoteq plays the right one alone.
+  await expect(page.locator("#sc-pt-status")).toContainText("solo mano derecha", { timeout: 10_000 });
+});
+
+test("«🔇 Silenciar»: Izquierda on the left, and the silenced one lit and pulsing", async ({ page }) => {
+  await open(page);
+  const buttons = page.locator("[data-mute]");
+  expect(await buttons.evaluateAll((bs) => bs.map((b) => b.dataset.mute))).toEqual(["L", "R"]);
+  const left = page.locator('[data-mute="L"]');
+  const look = () => left.evaluate((b) => [getComputedStyle(b).animationName, getComputedStyle(b).backgroundColor, b.textContent.trim()]);
+  const off = await look();
+  await left.click();
+  const on = await look();
+  expect(on[0]).toBe("sc-mute-pulse");
+  expect(on[1]).not.toBe(off[1]);
+  expect(on[2]).toContain("🔇");
+  expect(off[2]).toContain("🔈");
+  await left.click();
+  expect((await look())[0]).toBe("none");
 });
 
 test("piano view style: 3D by default, Plano on request, remembered", async ({ page }) => {
@@ -846,12 +1149,12 @@ test("loop: A and B on the bars sounding, past B back to A, faster each time, re
   await expect(page.locator("#sc-loop-toggle")).toHaveAttribute("aria-pressed", "true");
   expect(await page.evaluate(() => window.__practice.loop)).toMatchObject({ a: m[1].start, b: m[2].end, on: true });
   // Played up to B: back to A, and the ramp takes the speed up a step.
-  await page.locator("#sc-speed").fill("60");
-  await page.locator("#sc-loop-ramp").selectOption("10");
+  await page.locator('[data-speed="50"]').click();
+  await page.locator("#sc-loop-ramp").selectOption("1");
   await page.evaluate((t) => { window.__player.seek(t); const a = document.querySelector("#sc-audio"); a.muted = true; return a.play(); }, m[2].end - 0.3);
   await page.waitForFunction((a) => window.__practice.practice.loops >= 1 && window.__player.time < a + 1, m[1].start, { timeout: 5000 });
   await page.evaluate(() => document.querySelector("#sc-audio").pause());
-  await expect(page.locator("#sc-speed-val")).toHaveText("70 %");
+  await expect(page.locator('[data-speed][aria-pressed="true"]')).toHaveText(/^70 %/);
   // The falling notes mark it too; the song remembers it.
   expect(await page.evaluate(() => window.__fall.loop?.on)).toBe(true);
   await page.reload();
@@ -863,19 +1166,34 @@ test("loop: A and B on the bars sounding, past B back to A, faster each time, re
   await expect(page.locator("#sc-loop-label")).toHaveText("sin bucle");
 });
 
-test("hands: the player's hand is left out of the MIDI and faint on the piano; per song", async ({ page }) => {
+test("«🔇 Silenciar» a hand: left out of the MIDI, faint and dashed on the piano; per song; off again", async ({ page }) => {
   await open(page);
-  await page.locator("#sc-hand").selectOption("R");
+  const right = page.locator('[data-mute="R"]');
+  await right.click();
+  await expect(right).toHaveAttribute("aria-pressed", "true");
   expect(await page.evaluate(() => window.__player.silentStaff)).toBe(1);
-  expect(await page.evaluate(() => window.__fall.opts.dimStaff)).toBe(2);
+  expect(await page.evaluate(() => window.__fall.opts.dimStaff)).toBe(1); // the silenced hand is the faint one
+  // The stem has both hands in it: silencing one moves to the MIDI.
+  await expect(page.locator("#sc-source")).toHaveValue("midi");
+  await expect(page.locator("#sc-hand-hint")).toBeHidden();
+  expect(await page.evaluate(() => window.__fall.muted({ staff: 1 }) && !window.__fall.muted({ staff: 2 }))).toBe(true);
+  await page.locator("#sc-source").selectOption("stem");
   await expect(page.locator("#sc-hand-hint")).toBeVisible(); // the stem cannot leave a hand out
   await page.locator("#sc-source").selectOption("midi");
-  await expect(page.locator("#sc-hand-hint")).toBeHidden();
   await page.reload();
   await page.waitForFunction(() => window.__score?.data);
-  await expect(page.locator("#sc-hand")).toHaveValue("R");
+  await expect(page.locator('[data-mute="R"]')).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#sc-source")).toHaveValue("midi"); // what was heard, remembered too
   expect(await page.evaluate(() => window.__player.silentStaff)).toBe(1);
+  // Pressed again: both hands sound.
+  await page.locator('[data-mute="R"]').click();
+  await expect(page.locator('[data-mute="R"]')).toHaveAttribute("aria-pressed", "false");
+  expect(await page.evaluate(() => [window.__player.silentStaff, window.__fall.opts.dimStaff])).toEqual([0, 0]);
+  // The left one, straight from the right one.
+  await page.locator('[data-mute="R"]').click();
+  await page.locator('[data-mute="L"]').click();
+  await expect(page.locator('[data-mute="R"]')).toHaveAttribute("aria-pressed", "false");
+  expect(await page.evaluate(() => [window.__player.silentStaff, window.__fall.opts.dimStaff])).toEqual([2, 2]);
 });
 
 test("metronome and count-in: clicks on the bars' beats, remembered", async ({ page }) => {
@@ -918,17 +1236,69 @@ test("MIDI keyboard «Esperarme»: the song stops at a chord until its keys are 
   await page.evaluate(() => document.querySelector("#sc-audio").pause());
 });
 
-test("falling notes: bar lines with their numbers, «Anticipación» remembered", async ({ page }) => {
+test("falling notes: bar lines with their numbers, «Notas a la vista» remembered", async ({ page }) => {
   await open(page);
   await page.locator("#sc-view-toggle").click();
   expect(await page.evaluate(() => window.__fall.measures.length)).toBeGreaterThan(5);
   const lines = await page.evaluate(() => window.__fall.gridLines(0).filter((l) => l.number != null).length);
   expect(lines).toBeGreaterThan(0);
-  await page.locator("#sc-fall-ahead").selectOption("8");
-  expect(await page.evaluate(() => window.__fall.lookahead)).toBe(8);
+  await page.locator("#sc-fall-ahead").fill("100");
+  expect(await page.evaluate(() => window.__fall.lookahead)).toBe(20);
+  await expect(page.locator("#sc-fall-ahead-val")).toHaveText("20 s");
   await page.reload();
   await page.waitForFunction(() => window.__score?.data);
-  await expect(page.locator("#sc-fall-ahead")).toHaveValue("8");
+  await expect(page.locator("#sc-fall-ahead")).toHaveValue("100");
+  await expect.poll(() => page.evaluate(() => window.__fall.lookahead)).toBe(20);
+});
+
+test("«Notas a la vista»: Ctrl + wheel, + and −, and a two-finger pinch on the lane, said over it", async ({ page }) => {
+  await open(page);
+  await page.locator("#sc-view-toggle").click();
+  await page.waitForTimeout(300);
+  const ahead = () => page.evaluate(() => window.__fall.lookahead);
+  expect(await ahead()).toBe(4);
+  const r = await page.locator(".sc-fall-canvas").boundingBox();
+  const mid = { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  // Ctrl + wheel down: more seconds (the notes closer together); the page is not zoomed.
+  await page.mouse.move(mid.x, mid.y);
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, 200);
+  await page.keyboard.up("Control");
+  await expect.poll(ahead).toBeGreaterThan(6);
+  await expect(page.locator("#sc-fall-hint")).toBeVisible();
+  await expect(page.locator("#sc-fall-hint")).toContainText("Notas a la vista");
+  expect(await page.evaluate(() => window.visualViewport?.scale ?? 1)).toBe(1);
+  // + fewer, − more.
+  const before = await ahead();
+  await page.keyboard.press("+");
+  expect(await ahead()).toBeLessThan(before);
+  await page.keyboard.press("-");
+  await page.keyboard.press("-");
+  expect(await ahead()).toBeGreaterThan(before);
+  // A pinch: two fingers apart -> fewer seconds; nothing else happens (no
+  // seek, no note selected).
+  const t0 = await page.evaluate(() => window.__player.time);
+  const was = await ahead();
+  await page.evaluate(({ x, y }) => {
+    const el = document.querySelector("#sc-fall");
+    const ev = (type, id, dx) => el.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x + dx, clientY: y, button: 0, pointerId: id, pointerType: "touch", isPrimary: id === 11 }));
+    ev("pointerdown", 11, -40);
+    ev("pointerdown", 12, 40);
+    for (let i = 1; i <= 5; i++) {
+      ev("pointermove", 11, -40 - i * 16);
+      ev("pointermove", 12, 40 + i * 16);
+    }
+    ev("pointerup", 11, -120);
+    ev("pointerup", 12, 120);
+  }, mid);
+  const now = await ahead();
+  expect(now).toBeLessThan(was * 0.6); // 80 px apart -> 240 px: a third of the seconds
+  expect(await page.evaluate(() => window.__player.time)).toBeCloseTo(t0, 2);
+  expect(await page.evaluate(() => window.__score.selection.size)).toBe(0);
+  // Kept on this device.
+  await page.reload();
+  await page.waitForFunction(() => window.__score?.data);
+  await expect.poll(() => page.evaluate(() => window.__fall.lookahead)).toBeCloseTo(now, 1);
 });
 
 test("practice is kept on the server and the /score/ list shows it", async ({ page, request }) => {
@@ -962,7 +1332,7 @@ test("Pianoteq at the practice speed: rendered slower, played at its own rate, o
   test.skip(!info.available, "Pianoteq is not installed here");
   await open(page);
   await page.waitForFunction(() => document.querySelector("#sc-audio").readyState >= 1);
-  await page.locator("#sc-speed").fill("50");
+  await page.locator('[data-speed="50"]').click();
   await page.locator("#sc-source").selectOption("pianoteq");
   // The render made at 50 % arrives: the file plays at 1x, the song at 0.5x.
   await page.waitForFunction(() => window.__player.scale === 0.5 && !window.__player.pending, null, { timeout: 100_000 });
@@ -997,6 +1367,7 @@ test("piano view: dragging the lane moves the song, back or forward, paused or p
   await page.mouse.down();
   await page.mouse.move(x, y + lane * 0.5, { steps: 4 });
   await page.mouse.move(x, y + lane, { steps: 4 });
+  await page.waitForTimeout(150); // held still before letting go: no glide
   await page.mouse.up();
   expect(await page.evaluate(() => window.__player.time)).toBeCloseTo(9, 0);
   expect(await page.evaluate(() => !window.__player.playing)).toBe(true);
@@ -1010,11 +1381,56 @@ test("piano view: dragging the lane moves the song, back or forward, paused or p
   await page.mouse.move(box.x + box.width / 2, y + lane, { steps: 4 });
   await page.mouse.move(box.x + box.width / 2, y, { steps: 4 });
   const during = await page.evaluate(() => window.__player.time);
+  await page.waitForTimeout(150);
   await page.mouse.up();
   expect(during).toBeLessThan(t0 - 1.5);
   await page.waitForFunction(() => !document.querySelector("#sc-audio").paused);
   expect(await page.evaluate(() => JSON.stringify(window.__score.notes.map((n) => [n.id, n.start, n.midi])))).toBe(before);
   await page.evaluate(() => document.querySelector("#sc-audio").pause());
+});
+
+test("piano view: a flick keeps the song going and slowing down; a press catches it", async ({ page }) => {
+  await open(page);
+  await page.waitForFunction(() => document.querySelector("#sc-audio").readyState >= 1);
+  await page.locator("#sc-view-toggle").click();
+  await page.locator("#sc-fall-style").selectOption("flat");
+  await page.evaluate(() => window.__player.seek(2));
+  const box = await page.locator("#sc-fall").boundingBox();
+  const x = box.x + 4;
+  const y = box.y + box.height * 0.2;
+  const lane = await page.evaluate(() => window.__fall.laneHeight() / window.__fall.lookahead); // px per second
+  // Pull the notes down 1 s worth in ~100 ms and let go while moving.
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) {
+    await page.mouse.move(x, y + (lane * i) / 6);
+    await page.waitForTimeout(16);
+  }
+  await page.mouse.up();
+  const released = await page.evaluate(() => window.__player.time);
+  expect(released).toBeCloseTo(3, 0);
+  // It glides on (forward), then stops by itself.
+  await page.waitForFunction((r) => window.__player.time > r + 1, released, { timeout: 3000 });
+  await page.waitForFunction(() => {
+    const t = window.__player.time;
+    return new Promise((ok) => setTimeout(() => ok(window.__player.time === t), 250));
+  }, null, { timeout: 5000 });
+  const stopped = await page.evaluate(() => window.__player.time);
+  expect(stopped).toBeLessThan(released + 15);
+  expect(await page.evaluate(() => !window.__player.playing)).toBe(true);
+  // Another flick, caught by a tap: it stops where it is and nothing is selected.
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  for (let i = 1; i <= 6; i++) {
+    await page.mouse.move(x, y + (lane * i) / 6);
+    await page.waitForTimeout(16);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(60);
+  await page.mouse.click(x, y);
+  const caught = await page.evaluate(() => window.__player.time);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => window.__player.time)).toBeCloseTo(caught, 2);
 });
 
 test("«Ocultar paneles»: one line with the song and where it is; remembered; P", async ({ page }) => {
@@ -1058,4 +1474,66 @@ test("full screen: the piano edge to edge in a falling-notes video's proportions
   await page.keyboard.press("f");
   await page.waitForFunction(() => !document.body.classList.contains("sc-fs"));
   expect(await page.evaluate(() => window.__fall.opts.style)).toBe("3d");
+});
+
+test("«⚙» quick menu with the panels hidden: half see-through, lit when touched, edits, speed, mute, closes by itself", async ({ page }) => {
+  await open(page);
+  await page.locator("#sc-view-toggle").click();
+  const gear = page.locator("#sc-qm-gear");
+  await expect(gear).toBeHidden(); // panels shown: no need for it
+  await page.keyboard.press("p");
+  await expect(gear).toBeVisible();
+  const opacity = () => gear.evaluate((g) => Number(getComputedStyle(g).opacity));
+  await page.waitForTimeout(3000); // nothing touched
+  await expect.poll(opacity).toBeLessThan(0.5);
+  await page.mouse.move(200, 300);
+  await expect.poll(opacity).toBeGreaterThan(0.9);
+  // Opens downwards, one item under the other, at the top right.
+  await gear.click();
+  const menu = page.locator("#sc-qm-menu");
+  await expect(menu).toBeVisible();
+  const [g, m] = [await gear.boundingBox(), await menu.boundingBox()];
+  expect(m.y).toBeGreaterThan(g.y + g.height - 1);
+  expect(m.x + m.width).toBeGreaterThan((page.viewportSize().width) - 40);
+  // Speed.
+  await menu.locator('[data-qm-speed="50"]').click();
+  expect(await page.evaluate(() => window.__player.rate)).toBe(0.5);
+  await expect(menu.locator('[data-qm-speed="50"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('#sc-speed [data-speed="50"]')).toHaveAttribute("aria-pressed", "true");
+  // Mute the left hand, then not.
+  await menu.locator('[data-qm-mute="L"]').click();
+  expect(await page.evaluate(() => window.__player.silentStaff)).toBe(2);
+  await menu.locator('[data-qm-mute="L"]').click();
+  expect(await page.evaluate(() => window.__player.silentStaff || 0)).toBe(0);
+  // Notes on screen.
+  await menu.locator('[data-qm="ahead+"]').click();
+  expect(await page.evaluate(() => window.__fall.lookahead)).toBe(5);
+  // ✏️ Editar notas: a tapped note shows the edit bar, even with the panels hidden.
+  await menu.locator('[data-qm="edit"]').click();
+  await expect(menu).toBeHidden();
+  await page.evaluate(() => { document.querySelector("#sc-audio").currentTime = 2.0; });
+  await expect.poll(() => page.evaluate(() => window.__fall.hits.length)).toBeGreaterThan(2);
+  const a = await page.evaluate(() => {
+    const r = document.querySelector(".sc-fall-canvas").getBoundingClientRect();
+    const h = [...window.__fall.hits].sort((a, b) => b.h - a.h)[0];
+    return { x: r.left + h.x + h.w / 2, y: r.top + Math.max(h.y, 0) + 10 };
+  });
+  await page.mouse.click(a.x, a.y);
+  await expect(page.locator("#sc-editbar")).toBeVisible();
+  await page.locator("#sc-edit-clear").click();
+  // ＋ Agregar nota.
+  await gear.click();
+  await menu.locator('[data-qm="add"]').click();
+  expect(await page.evaluate(() => window.__score.adding)).toBe(true);
+  await page.keyboard.press("Escape");
+  // Left alone, the menu closes by itself.
+  await gear.click();
+  await expect(menu).toBeVisible();
+  await page.waitForTimeout(6500);
+  await expect(menu).toBeHidden();
+  // ▤ Mostrar paneles.
+  await gear.click();
+  await menu.locator('[data-qm="panels"]').click();
+  await expect(page.locator(".sc-transport")).toBeVisible();
+  await expect(gear).toBeHidden();
 });

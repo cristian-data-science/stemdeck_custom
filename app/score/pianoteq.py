@@ -26,9 +26,16 @@ import threading
 import time
 from pathlib import Path
 
-DEFAULT_PRESET = "NY Steinway D Classical"
+# The piano a score starts with (its own choice wins after that): the first of
+# these that is installed. «Bösendorfer VC Player» is the user's own preset,
+# the one most of the library was rendered with.
+DEFAULT_PRESETS = ("Bösendorfer VC Player", "NY Steinway D Classical")
+DEFAULT_PRESET = DEFAULT_PRESETS[-1]
 RENDER_TIMEOUT = 30 * 60  # a 9-minute song takes about a minute
-KEEP = 8  # renders kept per score (older ones are deleted): pianos x hands x speeds
+# Renders kept per score (older ones are deleted). One full set is 12: four
+# practice speeds x (both hands, right, left) -- app/api/score.py PT_SPEEDS --
+# plus room for the renders of an edit while the set catches up.
+KEEP = 16
 PRESETS_TTL = 60.0  # s: a preset saved in Pianoteq's own window shows up within a minute
 
 _KEY_RE = re.compile(r"^[0-9a-f]{20}$")
@@ -67,7 +74,27 @@ def executable() -> Path | None:
     return None
 
 
-def _run(args: list[str], timeout: float) -> subprocess.CompletedProcess:
+def _low_priority_flags() -> int:
+    """Windows: below normal priority (a background render must not make the
+    page, the audio or a separation stutter). Elsewhere see _nice."""
+    return getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0) if sys.platform == "win32" else 0
+
+
+def _nice() -> None:  # pragma: no cover - POSIX only
+    try:
+        os.nice(10)
+    except OSError:
+        pass
+
+
+def _run(
+    args: list[str], timeout: float, wanted=None, low: bool = False
+) -> subprocess.CompletedProcess:
+    """Run Pianoteq. With `wanted`, asked twice a second: False stops it
+    (Superseded) -- a render of notes already edited again, or one that must
+    give way to the render the page is waiting for."""
+    if wanted is not None:
+        return _run_stoppable(args, timeout, wanted, low)
     flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
     return subprocess.run(
         args,
@@ -80,6 +107,46 @@ def _run(args: list[str], timeout: float) -> subprocess.CompletedProcess:
         creationflags=flags,
         check=False,
     )
+
+
+class Superseded(Exception):
+    """A render no longer wanted (the notes were edited again, or the page
+    asked for another one of the same kind): skipped, or stopped mid-way."""
+
+
+def _run_stoppable(
+    args: list[str], timeout: float, wanted, low: bool = False
+) -> subprocess.CompletedProcess:
+    """_run, checking `wanted()` twice a second: a render of notes already
+    edited again is stopped rather than finished (a song takes ~30 s, and
+    the one wanted waited behind every stale one)."""
+    flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+    if low:
+        flags |= _low_priority_flags()
+    proc = subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=flags,
+        preexec_fn=_nice if low and sys.platform != "win32" else None,
+    )
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            out, err = proc.communicate(timeout=0.5)
+            return subprocess.CompletedProcess(args, proc.returncode, out, err)
+        except subprocess.TimeoutExpired:
+            if wanted():
+                if time.monotonic() < deadline:
+                    continue
+                proc.kill()
+                proc.communicate()
+                raise
+            proc.kill()
+            proc.communicate()
+            raise Superseded() from None
 
 
 class _TimedCache:
@@ -154,7 +221,7 @@ def info() -> dict:
         presets = list(_presets(str(exe)))
     except (OSError, subprocess.SubprocessError):
         presets = []
-    default = DEFAULT_PRESET if DEFAULT_PRESET in presets else (presets[0] if presets else None)
+    default = next((p for p in DEFAULT_PRESETS if p in presets), presets[0] if presets else None)
     return {
         "available": bool(presets),
         "name": exe.stem,
@@ -193,7 +260,12 @@ def render(midi: bytes, preset: str, folder: Path) -> Path:
     return render_as(midi, preset, folder, render_key(midi, preset))
 
 
-def render_as(midi: bytes, preset: str, folder: Path, key: str) -> Path:
+def render_as(
+    midi: bytes, preset: str, folder: Path, key: str, wanted=None, low: bool = False
+) -> Path:
+    """Render to folder/<key>.flac. `wanted()`, when given, is asked once
+    this render's turn comes (renders run one at a time) and while it runs:
+    False skips or stops it (Superseded)."""
     exe = executable()
     if exe is None:
         raise RuntimeError("Pianoteq no está instalado")
@@ -208,21 +280,21 @@ def render_as(midi: bytes, preset: str, folder: Path, key: str) -> Path:
         with _render_lock:
             if out.is_file():  # rendered meanwhile by another request
                 return out
+            if wanted is not None and not wanted():
+                raise Superseded()
             tmp.unlink(missing_ok=True)
-            res = _run(
-                [
-                    str(exe),
-                    "--headless",
-                    "--quiet",
-                    "--preset",
-                    preset,
-                    "--midi",
-                    str(mid),
-                    "--flac",
-                    str(tmp),
-                ],
-                timeout=RENDER_TIMEOUT,
-            )
+            cmd = [
+                str(exe),
+                "--headless",
+                "--quiet",
+                "--preset",
+                preset,
+                "--midi",
+                str(mid),
+                "--flac",
+                str(tmp),
+            ]
+            res = _run(cmd, RENDER_TIMEOUT, wanted, low)
         if not tmp.is_file() or tmp.stat().st_size == 0:
             detail = (res.stderr or res.stdout or "").strip().splitlines()[-1:] or ["sin salida"]
             raise RuntimeError(f"Pianoteq no generó audio ({detail[0][:200]})")

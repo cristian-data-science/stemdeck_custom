@@ -13,6 +13,7 @@ import statistics
 from app.score import engines, pedal, pulse, store
 from app.score.chords import chord_name, detect
 from app.score.engrave import Engraved, Settings, engrave
+from app.score.hands import assign_hands
 from app.score.keys import Key, estimate_key, key_from_id, key_id, parse_key
 from app.score.mei import to_mei
 from app.score.musicxml import to_musicxml
@@ -199,6 +200,22 @@ def drawn(notes: list[dict], eng: Engraved) -> list[dict]:
     return out
 
 
+def shown_hands(notes: list[dict], meta: dict, stem: str) -> dict[str, str]:
+    """Note id -> the hand the score shows ("R" treble, "L" bass): the note's
+    own hand, else the hands setting (engrave.quantize does the same)."""
+    settings, _ = view_settings(meta, stem)
+    auto = assign_hands(notes, settings.split) if settings.hands == "auto" else {}
+    out = {}
+    for n in notes:
+        if n.get("hand") in ("L", "R"):
+            out[n["id"]] = n["hand"]
+        elif n["id"] in auto:
+            out[n["id"]] = auto[n["id"]]
+        else:
+            out[n["id"]] = "R" if n["midi"] >= settings.split else "L"
+    return out
+
+
 def payload(job, stem: str, notes_doc: dict, meta: dict) -> dict:
     eng, chords, settings, names, conf = engrave_stem(job, stem, notes_doc, meta)
     notes = notes_doc.get("notes", [])
@@ -227,6 +244,8 @@ def payload(job, stem: str, notes_doc: dict, meta: dict) -> dict:
             "bpm": job.bpm,
             "key": job.key,
             "scale": job.scale,
+            # The model that separated the stems ("demucs" | "roformer").
+            "separator": getattr(job, "separator", "demucs"),
         },
         "stem": stem,
         "settings": settings.to_dict(),
@@ -331,6 +350,36 @@ def performance_midi(
     if hand in ("R", "L"):
         played = [n for n in played if treble.get(n["id"], True) == (hand == "R")]
     return build(played, treble, cents=playback_cents(job, stem), speed=speed)
+
+
+def performance_signature(
+    job,
+    stem: str,
+    notes_doc: dict,
+    meta: dict,
+    *,
+    hand: str | None = None,
+    speed: float = 1.0,
+) -> tuple[bytes, bytes]:
+    """(the MIDI to render, the bytes its render is named after).
+
+    The name leaves out which hand each note is in: the file splits the
+    notes into a right- and a left-hand track, but Pianoteq plays the same
+    notes either way, so a new hand model (or a hand correction) must not
+    send every song back to rendering. Same notes, times and velocities:
+    same render. A one-hand practice render still differs (other notes)."""
+    from app.score.engrave import STAFF_TREBLE
+    from app.score.midi import performance_midi as build
+
+    eng, played = _played(job, stem, notes_doc, meta)
+    treble = {
+        n["id"]: eng.notes[n["id"]]["staff"] == STAFF_TREBLE for n in played if n["id"] in eng.notes
+    }
+    if hand in ("R", "L"):
+        played = [n for n in played if treble.get(n["id"], True) == (hand == "R")]
+    cents = playback_cents(job, stem)
+    midi = build(played, treble, cents=cents, speed=speed)
+    return midi, build(played, {}, cents=cents, speed=speed)
 
 
 def legacy_performance_midi(job, stem: str, notes_doc: dict, meta: dict) -> bytes:

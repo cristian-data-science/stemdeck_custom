@@ -368,21 +368,42 @@ export class History {
     this.limit = limit;
     this.undoStack = [];
     this.redoStack = [];
+    // What each edit was («Movida»...), beside its state: the buttons and the
+    // saved history name what an undo undoes.
+    this.undoLabels = [];
+    this.redoLabels = [];
+    this.label = ""; // the edit the last undo / redo acted on
   }
-  push(state) {
+  push(state, label = "") {
     this.undoStack.push(state);
-    if (this.undoStack.length > this.limit) this.undoStack.shift();
+    this.undoLabels.push(label);
+    if (this.undoStack.length > this.limit) {
+      this.undoStack.shift();
+      this.undoLabels.shift();
+    }
     this.redoStack = [];
+    this.redoLabels = [];
   }
   undo(current) {
     if (!this.undoStack.length) return null;
+    this.label = this.undoLabels.pop() ?? "";
     this.redoStack.push(current);
+    this.redoLabels.push(this.label);
     return this.undoStack.pop();
   }
   redo(current) {
     if (!this.redoStack.length) return null;
+    this.label = this.redoLabels.pop() ?? "";
     this.undoStack.push(current);
+    this.undoLabels.push(this.label);
     return this.redoStack.pop();
+  }
+  /** What Undo / Redo would act on now ("" if unnamed or nothing). */
+  get undoLabel() {
+    return this.undoLabels[this.undoLabels.length - 1] ?? "";
+  }
+  get redoLabel() {
+    return this.redoLabels[this.redoLabels.length - 1] ?? "";
   }
   get canUndo() {
     return this.undoStack.length > 0;

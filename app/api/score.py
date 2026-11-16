@@ -7,7 +7,10 @@ DELETE /jobs/{id}/score/{stem}/notes        back to the transcription
 PUT    /jobs/{id}/score/{stem}/settings     grid, hand split, tempo, names...
 PUT    /jobs/{id}/score/{stem}/chords       rename / remove / add a chord
 GET    /jobs/{id}/score/{stem}/export.{mid|musicxml|mei}
+GET    /jobs/{id}/score/{stem}/history      the edit history (newest first)
+POST   /jobs/{id}/score/{stem}/history/{v}/undo   back to before edit v (one more edit)
 GET    /score/pianoteq                      is Pianoteq installed, its presets
+GET    /score/pianoteq/queue                the background renders: running, waiting
 POST   /jobs/{id}/score/{stem}/pianoteq     render the score with a preset
 GET    /jobs/{id}/score/{stem}/pianoteq/status/{key}
 GET    /jobs/{id}/score/{stem}/pianoteq/audio/{key}.flac
@@ -24,6 +27,7 @@ import os
 import re
 import threading
 import time
+from collections import deque
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
@@ -32,7 +36,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.core.config import JOB_ID_RE, JOBS_DIR
 from app.core.registry import get as registry_get
-from app.score import engines, ghosts, pianoteq, pulse, service, store, tuning
+from app.score import engines, ghosts, hand_labels, pianoteq, pulse, service, storage, store, tuning
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -84,6 +88,7 @@ async def _full(job, stem: str) -> dict:
     # song, and re-rendered every song it opened with it), and its practice.
     data["pianoteq"] = {"preset": (meta.get("pianoteq") or {}).get("preset")}
     data["practice"] = meta.get("practice") or {}
+    data["hand_labels"] = hand_labels.summary(job.id, stem)
     return data
 
 
@@ -170,6 +175,7 @@ def _run(job, stem: str, source: str = "auto") -> None:
             (d / "beats_notes.json").unlink(missing_ok=True)
         out.replace(d / "raw.json")
         (d / "notes.json").unlink(missing_ok=True)
+        store.clear_history(job.id, stem)  # about notes that are gone
         (d / "error.json").unlink(missing_ok=True)
         store.read_notes(job.id, stem)
         with _RUNS_LOCK:
@@ -242,6 +248,8 @@ class NoteIn(BaseModel):
 
 class NotesBody(BaseModel):
     notes: list[NoteIn] = Field(max_length=MAX_NOTES)
+    # What the edit was («Movida», «1 nota(s) borrada(s)»...), for the history.
+    what: str | None = Field(default=None, max_length=160)
 
     @model_validator(mode="after")
     def _unique(self):
@@ -272,7 +280,105 @@ async def put_notes(job_id: str, stem: str, body: NotesBody) -> JSONResponse:
         }
         for n in sorted(body.notes, key=lambda n: (n.start, n.midi))
     ]
-    await asyncio.to_thread(store.save_notes, job_id, stem, notes)
+    await asyncio.to_thread(_save_and_label, job_id, stem, notes, body.what)
+    return JSONResponse(await _full(job, stem))
+
+
+@router.get("/jobs/{job_id}/score/{stem}/history")
+async def get_history(job_id: str, stem: str) -> JSONResponse:
+    """The edit history, newest first: each save, what it was, when, and how
+    many notes it changed (the notes themselves stay on the server)."""
+    _job_or_404(job_id, stem)
+    _require_done(job_id, stem)
+    history = await asyncio.to_thread(store.read_history, job_id, stem)
+    current = (store.read_notes(job_id, stem) or {}).get("version")
+    return JSONResponse(
+        {
+            "version": current,
+            "entries": [
+                {
+                    "v": e["v"],
+                    "at": e.get("at"),
+                    "what": e.get("what"),
+                    "before": len(e.get("before") or []),
+                    "after": len(e.get("after") or []),
+                    "notes": _history_notes(e),
+                }
+                for e in reversed(history)
+            ],
+        }
+    )
+
+
+def _history_notes(entry: dict) -> list[dict]:
+    """A few of the notes an entry changed, to name them (pitch, time; before
+    -> after when the same note): enough for "Do4 -> Re4 en 0:12"."""
+    before = {n["id"]: n for n in entry.get("before") or []}
+    after = {n["id"]: n for n in entry.get("after") or []}
+    out = []
+    for i in list(dict.fromkeys([*before, *after]))[:3]:
+        b, a = before.get(i), after.get(i)
+        out.append(
+            {
+                "from": {"midi": b["midi"], "start": b["start"]} if b else None,
+                "to": {"midi": a["midi"], "start": a["start"]} if a else None,
+            }
+        )
+    return out
+
+
+@router.post("/jobs/{job_id}/score/{stem}/history/{version}/undo")
+async def undo_to(job_id: str, stem: str, version: int) -> JSONResponse:
+    """The notes as they were before the edit that made `version` (that edit
+    and every later one undone), saved as one more edit: itself undoable."""
+    job = _job_or_404(job_id, stem)
+    _require_done(job_id, stem)
+    got = await asyncio.to_thread(store.notes_before, job_id, stem, version)
+    if got is None:
+        raise HTTPException(status_code=404, detail="esa edición ya no está en el historial")
+    notes, entry = got
+    what = f"Volver a antes de «{entry.get('what') or 'Edición'}»"
+    await asyncio.to_thread(_save_and_label, job_id, stem, notes, what)
+    return JSONResponse(await _full(job, stem))
+
+
+def _save_and_label(job_id: str, stem: str, notes: list[dict], what: str | None = None) -> None:
+    """Save, and keep the hands the user changed for retraining
+    (hand_labels.py); a reviewed song's snapshot follows them."""
+    before = (store.read_notes(job_id, stem) or {}).get("notes") or []
+    store.save_notes(job_id, stem, notes, what)
+    if not hand_labels.changed_hands(before, notes):
+        return
+    try:
+        meta = store.read_meta(job_id, stem)
+        hand_labels.record(job_id, stem, before, notes, service.shown_hands(before, meta, stem))
+        if hand_labels.reviewed(job_id, stem):
+            hand_labels.mark_reviewed(job_id, stem, notes, service.shown_hands(notes, meta, stem))
+    except Exception:  # never lose the edit for the training log
+        logger.exception("hand labels for %s/%s", job_id, stem)
+
+
+@router.post("/jobs/{job_id}/score/{stem}/hands/reviewed")
+async def mark_hands_reviewed(job_id: str, stem: str) -> JSONResponse:
+    """«✓ Canción revisada»: every note's hand, as the score shows it, kept as
+    confirmed by the user (training data for the hand model)."""
+    job = _job_or_404(job_id, stem)
+    _require_done(job_id, stem)
+
+    def mark():
+        notes = (store.read_notes(job_id, stem) or {}).get("notes") or []
+        meta = store.read_meta(job_id, stem)
+        hand_labels.mark_reviewed(job_id, stem, notes, service.shown_hands(notes, meta, stem))
+
+    await asyncio.to_thread(mark)
+    return JSONResponse(await _full(job, stem))
+
+
+@router.delete("/jobs/{job_id}/score/{stem}/hands/reviewed")
+async def unmark_hands_reviewed(job_id: str, stem: str) -> JSONResponse:
+    job = _job_or_404(job_id, stem)
+    _require_done(job_id, stem)
+    await asyncio.to_thread(hand_labels.unmark_reviewed, job_id, stem)
     return JSONResponse(await _full(job, stem))
 
 
@@ -398,6 +504,29 @@ async def export_score(
 # render key -> {"state": "rendering" | "error", "error"}
 _PT_RUNS: dict[tuple[str, str, str], dict] = {}  # (job, stem, key): one score's renders
 _PT_LOCK = threading.RLock()  # _pt_start holds it around _pt_status
+# What each score wants rendered now. Renders run one at a time (~30 s a
+# song), and every edit, hand pre-render and automatic render used to queue
+# one more: after a few edits the render the page waited for came minutes
+# later, behind renders of notes already edited again. A render is wanted
+# while its notes are the score's latest (notes.json "version") and it is the
+# latest asked for its kind (hand, speed); otherwise skipped, or stopped.
+_PT_NOTES: dict[tuple[str, str], int] = {}  # (job, stem) -> latest notes version
+_PT_WANT: dict[tuple[str, str, str | None, float], str] = {}  # (job, stem, hand, speed) -> key
+# Renders the page asked for, waiting or running: the background ones
+# (_pt_background) give way to them, stopping mid-render if need be.
+_PT_HIGH = 0
+# Background renders, nobody waiting for them: every score's Pianoteq audio
+# at every practice speed (PT_SPEEDS, the page's «Velocidad» buttons) and for
+# both hands, the right hand alone and the left hand alone -- so choosing a
+# speed or muting a hand («Silenciar») plays Pianoteq at once instead of the
+# MIDI synth while a render runs. (job, stem, hand, speed); the piano and the
+# notes are read when the render's turn comes, so it is always of the score
+# as it stands then.
+_PT_BG: deque[tuple[str, str, str | None, float]] = deque()
+_PT_BG_RUNNING = False
+_PT_BG_NOW: dict = {}  # the background render running: {job, stem, hand, speed, since}
+PT_HANDS: tuple[str | None, ...] = (None, "R", "L")
+PT_SPEEDS: tuple[float, ...] = (1.0, 0.7, 0.5, 0.25)
 
 
 @router.get("/score/pianoteq")
@@ -436,9 +565,63 @@ def _pt_status(job_id: str, stem: str, key: str) -> dict:
     return {**run, "key": key}
 
 
-def _pt_render(job_id: str, stem: str, key: str, midi: bytes, preset: str) -> None:
+def _pt_wanted(job_id: str, stem: str, key: str, version: int, hand, speed) -> bool:
+    with _PT_LOCK:
+        return (
+            _PT_NOTES.get((job_id, stem), version) == version
+            and _PT_WANT.get((job_id, stem, hand, speed), key) == key
+        )
+
+
+def _pt_render(
+    job_id: str,
+    stem: str,
+    key: str,
+    midi: bytes,
+    preset: str,
+    version: int = 0,
+    hand: str | None = None,
+    speed: float = 1.0,
+) -> None:
+    """A render the page asked for (counted in _PT_HIGH while it waits)."""
+    global _PT_HIGH
     try:
-        pianoteq.render_as(midi, preset, _pt_folder(job_id, stem), key)
+        _pt_render_now(job_id, stem, key, midi, preset, version, hand, speed)
+    finally:
+        with _PT_LOCK:
+            _PT_HIGH -= 1
+    # Rendered with this piano (the notes as they stand): every other speed
+    # and hand follows, behind (the ones already made are skipped at once).
+    if pianoteq.audio_path(_pt_folder(job_id, stem), key).is_file():
+        _pt_background(job_id, stem, front=True)
+
+
+def _pt_render_now(
+    job_id: str,
+    stem: str,
+    key: str,
+    midi: bytes,
+    preset: str,
+    version: int,
+    hand: str | None,
+    speed: float,
+) -> None:
+    try:
+        pianoteq.render_as(
+            midi,
+            preset,
+            _pt_folder(job_id, stem),
+            key,
+            wanted=lambda: _pt_wanted(job_id, stem, key, version, hand, speed),
+        )
+        storage.note_render(
+            _pt_folder(job_id, stem), key, preset=preset, hand=hand, speed=speed, version=version
+        )
+        with _PT_LOCK:
+            _PT_RUNS.pop((job_id, stem, key), None)
+    except pianoteq.Superseded:
+        # Asked again (POST) if the page still wants it: "none" from now on.
+        logger.info("pianoteq render %s of %s/%s skipped: superseded", key, job_id, stem)
         with _PT_LOCK:
             _PT_RUNS.pop((job_id, stem, key), None)
     except Exception as exc:  # noqa: BLE001 - reported to the page
@@ -448,15 +631,20 @@ def _pt_render(job_id: str, stem: str, key: str, midi: bytes, preset: str) -> No
 
 
 def _adopt_legacy(
-    job, stem: str, notes_doc: dict, meta: dict, presets: list[str], keys: dict
+    job, stem: str, notes_doc: dict, meta: dict, presets: list[str], keys: dict, midi: bytes
 ) -> None:
-    """Renders saved under the old naming (the MIDI with the song's tempo
-    map) renamed to the new one: the same sound, so not rendered again."""
+    """Renders saved under an older naming renamed to the current one: the
+    same sound, so not rendered again. Named after the two-track MIDI itself
+    (the hands in the name, until 2026-11-12), or before that after the MIDI
+    with the song's tempo map."""
     folder = _pt_folder(job.id, stem)
     if not folder.is_dir():
         return
     pianoteq.drop_legacy(folder)
     missing = [p for p in presets if not pianoteq.audio_path(folder, keys[p]).is_file()]
+    for p in missing:
+        pianoteq.adopt(folder, pianoteq.render_key(midi, p), keys[p])
+    missing = [p for p in missing if not pianoteq.audio_path(folder, keys[p]).is_file()]
     if not missing:
         return
     try:
@@ -470,18 +658,31 @@ def _adopt_legacy(
 def _pt_start(job, stem: str, preset: str, hand: str | None = None, speed: float = 1.0) -> dict:
     """The render of the score as it stands now with `preset`: its status,
     starting it (in a thread) unless it is ready or already running."""
+    global _PT_HIGH
     notes_doc = store.read_notes(job.id, stem)
     meta = store.read_meta(job.id, stem)
-    midi = service.performance_midi(job, stem, notes_doc, meta, hand=hand, speed=speed)
-    key = pianoteq.render_key(midi, preset)
+    midi, sig = service.performance_signature(job, stem, notes_doc, meta, hand=hand, speed=speed)
+    key = pianoteq.render_key(sig, preset)
     if hand is None and speed == 1.0:
-        _adopt_legacy(job, stem, notes_doc, meta, [preset], {preset: key})
+        _adopt_legacy(job, stem, notes_doc, meta, [preset], {preset: key}, midi)
+    version = int((notes_doc or {}).get("version", 0))
     with _PT_LOCK:  # the page and the automatic render may ask at once: one render
+        # The latest notes and the latest of this kind: older renders waiting
+        # for their turn (or running) give way to this one.
+        # Read now, so the score as it stands: the latest (a new transcription
+        # starts again at version 1, hence no "newer than" comparison).
+        _PT_NOTES[(job.id, stem)] = version
+        _PT_WANT[(job.id, stem, hand, speed)] = key
         status = _pt_status(job.id, stem, key)
         if status["state"] in ("ready", "rendering"):
             return status
         _PT_RUNS[(job.id, stem, key)] = {"state": "rendering"}
-    threading.Thread(target=_pt_render, args=(job.id, stem, key, midi, preset), daemon=True).start()
+        _PT_HIGH += 1
+    threading.Thread(
+        target=_pt_render,
+        args=(job.id, stem, key, midi, preset, version, hand, speed),
+        daemon=True,
+    ).start()
     return {"state": "rendering", "key": key}
 
 
@@ -492,35 +693,207 @@ def _pt_preset(job_id: str, stem: str, presets: list[str], default: str | None) 
     return last if last in presets else default
 
 
-_PT_SOON: set[tuple[str, str]] = set()  # scores whose automatic render is being set up
+def _pt_combos() -> list[tuple[str | None, float]]:
+    """(hand, speed) of the background renders, as Settings › Storage asks
+    («pianoteq_background»): "all" every speed and hand, "hands" both hands
+    and each hand at 100 %, "main" only both hands at 100 %, "off" none."""
+    from app.core.settings import get_pianoteq_background
+
+    mode = get_pianoteq_background()
+    if mode == "off":
+        return []
+    speeds = PT_SPEEDS if mode == "all" else (1.0,)
+    hands = PT_HANDS if mode in ("all", "hands") else (None,)
+    return [(h, s) for s in speeds for h in hands]
 
 
-def _pt_soon(job, stem: str) -> None:
-    try:
-        available = pianoteq.info()
-        if not available["available"]:
+def _pt_variants(job_id: str, stem: str) -> list[tuple[str, str, str | None, float]]:
+    """Every background render of one score, in the order they are made:
+    by speed (100 %, 70 %, 50 %, 25 %), and at each speed both hands, the
+    right hand alone, the left hand alone (as far as _pt_combos allows)."""
+    return [(job_id, stem, h, s) for h, s in _pt_combos()]
+
+
+def pt_current(job, stem: str, keys: bool = True) -> tuple[dict, int, str | None]:
+    """The renders this score would have now with its piano: {key: (hand,
+    speed)} for every speed and hand, its notes version and the piano
+    (storage.py tells the renders on disk apart with it)."""
+    info = pianoteq.info()
+    if not info["available"]:
+        return {}, None, None
+    preset = _pt_preset(job.id, stem, info["presets"], info["default"])
+    notes_doc = store.read_notes(job.id, stem)
+    version = int((notes_doc or {}).get("version", 0))
+    if not keys:
+        return {}, version, preset
+    meta = store.read_meta(job.id, stem)
+    out = {}
+    for speed in PT_SPEEDS:
+        for hand in PT_HANDS:
+            _, sig = service.performance_signature(
+                job, stem, notes_doc, meta, hand=hand, speed=speed
+            )
+            out[pianoteq.render_key(sig, preset)] = (hand, speed)
+    return out, version, preset
+
+
+def _pt_queue(tasks, front: bool = False) -> None:
+    """Queue background renders (see _PT_BG): `front` for the song just made
+    or opened (before everything else), else at the end (the startup sweep)."""
+    global _PT_BG_RUNNING
+    if os.environ.get("STEMDECK_PIANOTEQ_AUTO", "1") == "0":
+        return  # off (the tests: a real Pianoteq must not render behind them)
+    tasks = list(tasks)
+    with _PT_LOCK:
+        for t in tasks:
+            if t in _PT_BG:
+                _PT_BG.remove(t)
+        if front:
+            _PT_BG.extendleft(reversed(tasks))
+        else:
+            _PT_BG.extend(tasks)
+        if _PT_BG_RUNNING:
             return
-        preset = _pt_preset(job.id, stem, available["presets"], available["default"])
-        if preset:
-            _pt_start(job, stem, preset)
-    except Exception as exc:  # noqa: BLE001 -- the page can still ask for it
-        logger.warning("pianoteq pre-render of %s/%s skipped: %s", job.id, stem, exc)
+        _PT_BG_RUNNING = True
+    threading.Thread(target=_pt_background_loop, daemon=True, name="pianoteq-bg").start()
+
+
+def _pt_background(job_id: str, stem: str, front: bool = False) -> None:
+    """Every variant of this score (_pt_variants), in the background."""
+    _pt_queue(_pt_variants(job_id, stem), front=front)
+
+
+def _pt_background_loop() -> None:
+    global _PT_BG_RUNNING
+    while True:
+        task = None
+        with _PT_LOCK:
+            busy = _PT_HIGH > 0
+            if not busy:
+                if not _PT_BG:
+                    _PT_BG_RUNNING = False
+                    return
+                task = _PT_BG.popleft()
+        if task is None:  # the page is waiting for a render: it goes first
+            time.sleep(0.5)
+            continue
+        try:
+            if _pt_background_one(*task) == "yielded":
+                with _PT_LOCK:
+                    if task not in _PT_BG:
+                        _PT_BG.appendleft(task)
+        except Exception as exc:  # noqa: BLE001 -- a head start only
+            logger.warning("pianoteq background render of %s skipped: %s", task, exc)
+
+
+def _pt_background_one(job_id: str, stem: str, hand: str | None, speed: float = 1.0) -> str:
+    """One background render: "done", "skipped" (nothing to do), or
+    "yielded" (stopped for a render the page asked for: queued again)."""
+    job = registry_get(job_id)
+    if job is None or job.status != "done" or getattr(job, "trashed_at", None):
+        return "skipped"
+    if not (store.score_dir(job_id, stem) / "raw.json").is_file():
+        return "skipped"
+    available = pianoteq.info()
+    if not available["available"]:
+        return "skipped"
+    preset = _pt_preset(job_id, stem, available["presets"], available["default"])
+    if not preset:
+        return "skipped"
+    notes_doc = store.read_notes(job_id, stem)
+    meta = store.read_meta(job_id, stem)
+    midi, sig = service.performance_signature(job, stem, notes_doc, meta, hand=hand, speed=speed)
+    key = pianoteq.render_key(sig, preset)
+    if hand is None and speed == 1.0:
+        _adopt_legacy(job, stem, notes_doc, meta, [preset], {preset: key}, midi)
+    version = int((notes_doc or {}).get("version", 0))
+    with _PT_LOCK:
+        _PT_NOTES[(job_id, stem)] = version  # read now: the score as it stands
+        if _pt_status(job_id, stem, key)["state"] in ("ready", "rendering"):
+            return "skipped"
+        _PT_RUNS[(job_id, stem, key)] = {"state": "rendering"}
+        _PT_BG_NOW.update(job=job_id, stem=stem, hand=hand, speed=speed, since=time.time())
+
+    def wanted() -> bool:
+        with _PT_LOCK:
+            return _PT_HIGH == 0 and _PT_NOTES.get((job_id, stem), version) == version
+
+    try:
+        # Below normal priority: the page, the audio and a separation stay
+        # smooth while it renders.
+        pianoteq.render_as(midi, preset, _pt_folder(job_id, stem), key, wanted=wanted, low=True)
+        storage.note_render(
+            _pt_folder(job_id, stem), key, preset=preset, hand=hand, speed=speed, version=version
+        )
+        logger.info(
+            "[%s] pianoteq %s at %d %% (%s) rendered in the background",
+            job_id,
+            hand or "both hands",
+            round(speed * 100),
+            preset,
+        )
+        return "done"
+    except pianoteq.Superseded:
+        with _PT_LOCK:
+            edited = _PT_NOTES.get((job_id, stem), version) != version
+        return "skipped" if edited else "yielded"
     finally:
         with _PT_LOCK:
-            _PT_SOON.discard((job.id, stem))
+            _PT_BG_NOW.clear()
+            if (_PT_RUNS.get((job_id, stem, key)) or {}).get("state") == "rendering":
+                _PT_RUNS.pop((job_id, stem, key), None)
 
 
 def pianoteq_soon(job, stem: str) -> None:
     """Render the score with Pianoteq in the background, without anyone
-    asking: every score gets its Pianoteq audio, and nothing waits for it
-    (the transcription is done, the page opens; the render runs beside)."""
+    asking: every score gets its Pianoteq audio at every practice speed and
+    for each hand (_pt_variants), and nothing waits for it (the transcription
+    is done, the page opens; the renders run beside, giving way to any the
+    page asks for)."""
+    _pt_background(job.id, stem, front=True)
+
+
+def pianoteq_sweep() -> int:
+    """Every finished score's Pianoteq audio, made in the background when the
+    server starts: what is missing is rendered (songs made before the speeds
+    and the hands were rendered too), the rest is skipped at once. By speed
+    first: every song at 100 % (both hands, right, left), the most recently
+    worked on first; then every song at 70 %, 50 %, 25 %. Returns how many
+    scores were queued."""
+    from app.core.registry import all_jobs
+
     if os.environ.get("STEMDECK_PIANOTEQ_AUTO", "1") == "0":
-        return  # off (the tests: a real Pianoteq must not render behind them)
-    with _PT_LOCK:  # one at a time per score (the page reloads, polls...)
-        if (job.id, stem) in _PT_SOON:
-            return
-        _PT_SOON.add((job.id, stem))
-    threading.Thread(target=_pt_soon, args=(job, stem), daemon=True).start()
+        return 0
+    try:
+        if not pianoteq.info()["available"]:
+            return 0
+    except Exception:  # noqa: BLE001
+        return 0
+    found = []
+    for job_id, job in all_jobs().items():
+        if job.status != "done" or getattr(job, "trashed_at", None) or not JOB_ID_RE.match(job_id):
+            continue
+        root = JOBS_DIR / job_id / "score"
+        for d in root.iterdir() if root.is_dir() else []:
+            raw = d / "raw.json"
+            if d.is_dir() and raw.is_file():
+                notes = d / "notes.json"
+                found.append(((notes if notes.is_file() else raw).stat().st_mtime, job_id, d.name))
+    scores = [(job_id, stem) for _, job_id, stem in sorted(found, reverse=True)]
+    combos = _pt_combos()
+    _pt_queue([(j, s, h, v) for v in PT_SPEEDS for j, s in scores for h, cv in combos if cv == v])
+    return len(scores)
+
+
+def pianoteq_queue_state() -> dict:
+    """What the background is doing: the render running, and how many wait."""
+    with _PT_LOCK:
+        return {"running": dict(_PT_BG_NOW) or None, "waiting": len(_PT_BG)}
+
+
+@router.get("/score/pianoteq/queue")
+async def pianoteq_queue() -> JSONResponse:
+    return JSONResponse(pianoteq_queue_state())
 
 
 @router.post("/jobs/{job_id}/score/{stem}/pianoteq")
@@ -549,12 +922,36 @@ def _pt_ready(job, stem: str) -> dict:
     if not info["available"]:
         return {"preset": preset, "ready": []}
     notes_doc = store.read_notes(job.id, stem)
-    midi = service.performance_midi(job, stem, notes_doc, meta)
-    keys = {p: pianoteq.render_key(midi, p) for p in info["presets"]}
-    _adopt_legacy(job, stem, notes_doc, meta, info["presets"], keys)
+    midi, sig = service.performance_signature(job, stem, notes_doc, meta)
+    keys = {p: pianoteq.render_key(sig, p) for p in info["presets"]}
+    _adopt_legacy(job, stem, notes_doc, meta, info["presets"], keys, midi)
     folder = _pt_folder(job.id, stem)
     ready = [p for p in info["presets"] if pianoteq.audio_path(folder, keys[p]).is_file()]
-    return {"preset": preset if preset in info["presets"] else None, "ready": ready}
+    # This score's piano at each practice speed and hand: which are made
+    # ("100:both", "70:R"...), for the page to mark the speeds ready.
+    own = (
+        preset
+        if preset in info["presets"]
+        else _pt_preset(job.id, stem, info["presets"], info["default"])
+    )
+    variants = []
+    for speed in PT_SPEEDS:
+        for hand in PT_HANDS:
+            if hand is None and speed == 1.0:
+                ok = own in ready
+            else:
+                _, vsig = service.performance_signature(
+                    job, stem, notes_doc, meta, hand=hand, speed=speed
+                )
+                ok = pianoteq.audio_path(folder, pianoteq.render_key(vsig, own)).is_file()
+            if ok:
+                variants.append(f"{round(speed * 100)}:{hand or 'both'}")
+    return {
+        "preset": preset if preset in info["presets"] else None,
+        "ready": ready,
+        "piano": own,
+        "variants": variants,
+    }
 
 
 @router.get("/jobs/{job_id}/score/{stem}/pianoteq/ready")

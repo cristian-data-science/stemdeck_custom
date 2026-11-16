@@ -16,6 +16,7 @@ previous version, never a truncated file.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
@@ -244,7 +245,92 @@ def _added(note: dict) -> bool:
     return str(note.get("id", "")).startswith("nu")
 
 
-def save_notes(job_id: str, stem: str, notes: list[dict]) -> dict:
+# The edit history (score/<stem>/history.jsonl): one line per save, the notes
+# it changed as they were before and after. Kept on the server, so an edit
+# can be gone back on from any device, after a reload (the page's own undo
+# lives in memory), and «Restaurar original» is one more entry, undoable too.
+HISTORY = "history.jsonl"
+HISTORY_KEEP = 300  # entries kept per score (the oldest drop off)
+_NOTE_FIELDS = ("midi", "start", "end", "velocity", "hand", "held")
+
+
+def _field(note: dict, key: str):
+    v = note.get(key)
+    if isinstance(v, bool) or v is None:
+        return v or None  # held False and absent are the same
+    if isinstance(v, (int, float)):
+        return round(float(v), 4)
+    return v
+
+
+def _same(a: dict, b: dict) -> bool:
+    return all(_field(a, k) == _field(b, k) for k in _NOTE_FIELDS)
+
+
+def note_changes(old: list[dict], new: list[dict]) -> tuple[list[dict], list[dict]]:
+    """(before, after): the notes a save changed -- removed or changed ones as
+    they were, added or changed ones as they are now."""
+    was = {n["id"]: n for n in old}
+    now = {n["id"]: n for n in new}
+    before = [n for i, n in was.items() if i not in now or not _same(n, now[i])]
+    after = [n for i, n in now.items() if i not in was or not _same(was[i], n)]
+    return before, after
+
+
+def _log_history(d: Path, version: int, now: float, what: str | None, before, after) -> None:
+    if not before and not after:
+        return
+    entry = {
+        "v": version,
+        "at": round(now, 3),
+        "what": (what or "Edición")[:160],
+        "before": before,
+        "after": after,
+    }
+    path = d / HISTORY
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    lines.append(json.dumps(entry, ensure_ascii=False, separators=(",", ":")))
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines[-HISTORY_KEEP:]) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def read_history(job_id: str, stem: str) -> list[dict]:
+    """The edit history, oldest first."""
+    path = score_dir(job_id, stem) / HISTORY
+    out = []
+    for line in path.read_text(encoding="utf-8").splitlines() if path.is_file() else []:
+        try:
+            out.append(json.loads(line))
+        except ValueError:
+            continue
+    return out
+
+
+def clear_history(job_id: str, stem: str) -> None:
+    """A new transcription: the history is about notes that are gone."""
+    (score_dir(job_id, stem) / HISTORY).unlink(missing_ok=True)
+
+
+def notes_before(job_id: str, stem: str, version: int) -> tuple[list[dict], dict] | None:
+    """The notes as they were just before the save that made `version`: the
+    current ones with every later entry undone, newest first. None when the
+    history does not reach that far back. Also returns that entry."""
+    history = read_history(job_id, stem)
+    target = next((e for e in history if e.get("v") == version), None)
+    current = read_notes(job_id, stem)
+    if target is None or current is None:
+        return None
+    notes = {n["id"]: n for n in current.get("notes") or []}
+    for e in sorted((e for e in history if e.get("v", 0) >= version), key=lambda e: -e["v"]):
+        for n in e.get("after") or []:
+            notes.pop(n["id"], None)
+        for n in e.get("before") or []:
+            notes[n["id"]] = n
+    return sorted(notes.values(), key=lambda n: (n["start"], n["midi"])), target
+
+
+def save_notes(job_id: str, stem: str, notes: list[dict], what: str | None = None) -> dict:
     d = score_dir(job_id, stem)
     with _LOCK:
         current = read_json(d / "notes.json") or {}
@@ -258,6 +344,11 @@ def save_notes(job_id: str, stem: str, notes: list[dict]) -> dict:
             "trash": _trash(current, notes, now),
         }
         write_json(d / "notes.json", data)
+        try:
+            before, after = note_changes(current.get("notes") or [], notes)
+            _log_history(d, data["version"], now, what, before, after)
+        except Exception:  # noqa: BLE001 -- the history never costs an edit
+            logging.getLogger("stemdeck.score").warning("edit history not written", exc_info=True)
     return data
 
 
@@ -279,4 +370,16 @@ def reset_notes(job_id: str, stem: str) -> dict | None:
             if t.get("id") not in present and t.get("id") not in seen
         ]
         write_json(score_dir(job_id, stem) / "notes.json", data)
+        try:
+            before, after = note_changes(current.get("notes") or [], data["notes"])
+            _log_history(
+                score_dir(job_id, stem),
+                data["version"],
+                time.time(),
+                "Restaurar original (sin ediciones)",
+                before,
+                after,
+            )
+        except Exception:  # noqa: BLE001
+            logging.getLogger("stemdeck.score").warning("edit history not written", exc_info=True)
     return data

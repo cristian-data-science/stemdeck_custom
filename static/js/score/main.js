@@ -38,9 +38,10 @@ import {
   soundEnd,
   splitChoices,
   toggleHand,
+  setHand as setNoteHands,
   transpose,
 } from "./model.js";
-import { FallView } from "./fall.js";
+import { FallView, HAND_COLORS, aheadFromSlider, aheadLabel, clampAhead, sliderFromAhead } from "./fall.js";
 import { Player } from "./player.js";
 import { MidiInput } from "./midi-input.js";
 import {
@@ -55,11 +56,13 @@ import {
   nextChord,
   playsHand,
   rampSpeed,
+  snapSpeed,
   readSongPrefs,
   startTime,
   writeSongPrefs,
 } from "./practice.js";
 import { wireSeparation } from "./separation.js";
+import { GLIDE_START, flickSpeed, glideStep, trackFlick } from "./glide.js";
 import { fingeringFeature, wireSheetImport } from "./sheet-fingering.js";
 import { decorate, hideCursor, markNotes, noteIdOf, notesInRect, placeCursor, renderScore } from "./render.js";
 
@@ -94,6 +97,7 @@ const state = {
   playing: new Set(),
   doomed: new Set(),
   history: new History(),
+  pendingWhat: [], // the edits the next save carries, named (the saved history)
   // Note names inside the heads: off until asked for (Nombres, top panel).
   view: {
     noteNames: false,
@@ -124,6 +128,9 @@ const state = {
   pending: null,
   lastSys: null,
   adding: false, // «＋ Nota»: a tap on the score or the piano adds a note
+  painting: false, // «🖌 Corregir manos»: a tap or a stroke on the piano sets notes' hand
+  paintHand: "R", // the hand the brush paints: "R", "L" or "" (back to the program)
+  handEdit: null, // a hand correction being saved: {ids, staff: id -> staff before}
 };
 
 const player = new Player($("sc-audio"));
@@ -139,7 +146,7 @@ const fingers = fingeringFeature({ $, api, API, fall, state, status: (t) => stat
 window.__fingers = fingers;
 // Pianoteq rendering (see "Pianoteq" below): wanted?, debounce, newest request,
 // the pianos already rendered for these notes, the hand of the file playing.
-const pt = { want: false, timer: 0, ticket: 0, key: "", setup: false, ready: new Set(), hand: null };
+const pt = { want: false, timer: 0, ticket: 0, key: "", setup: false, ready: new Set(), variants: new Set(), marksTimer: 0, hand: null, removing: 0 };
 window.__score = state; // inspection hook for tests and debugging
 
 function readView() {
@@ -227,7 +234,8 @@ async function landing() {
       a.href = `/score/?job=${encodeURIComponent(j.id)}&stem=${stems[0]}`;
       a.innerHTML = `<span></span><span class="sc-muted"></span>`;
       a.firstChild.textContent = j.title || j.id;
-      a.lastChild.textContent = [j.bpm && `${j.bpm} BPM`, j.key, stems.map(stemName).join(", ")].filter(Boolean).join(" · ");
+      const model = { demucs: "Demucs", roformer: "RoFormer", none: "Solo piano" }[j.separator];
+      a.lastChild.textContent = [j.bpm && `${j.bpm} BPM`, j.key, stems.map(stemName).join(", "), model].filter(Boolean).join(" · ");
       for (const [kind, text] of libraryBadges(lib[j.id])) {
         const b = document.createElement("span");
         b.className = `sc-badge ${kind}`;
@@ -375,13 +383,13 @@ async function load(data) {
   setFallView(!!state.view.fall);
 }
 
-/** Playback speed in % (25-125), pitch kept; remembered in this browser.
- *  The audio, the MIDI synth, Pianoteq and the cursor all follow it. */
+/** Playback speed in %: one of the practice speeds (25, 50, 70, 100), pitch
+ *  kept; remembered in this browser. The audio, the MIDI synth, Pianoteq and
+ *  the cursor all follow it. */
 function setSpeed(pct) {
-  const v = Math.max(25, Math.min(125, Math.round(pct / 5) * 5));
+  const v = snapSpeed(pct);
   const was = Math.round(player.rate * 100);
-  $("sc-speed").value = v;
-  $("sc-speed-val").textContent = `${v} %`;
+  for (const b of document.querySelectorAll("[data-speed]")) b.setAttribute("aria-pressed", String(Number(b.dataset.speed) === v));
   player.setRate(v / 100);
   state.view.speed = v;
   writeView();
@@ -421,9 +429,16 @@ function setPedal(pct) {
 // the render stale: a new one is asked for after a short pause, and the old
 // one keeps playing until the new one is ready.
 
-function ptStatus(text) {
+const PT_STATUS_FADE_MS = 6000;
+let ptStatusTimer = 0;
+/** The floating Pianoteq status. `fade`: a «✓» that goes away by itself
+ *  (it floats over the piano now: it must not stay there for good). */
+function ptStatus(text, { fade = false } = {}) {
+  clearTimeout(ptStatusTimer);
   $("sc-pt-status").hidden = !text;
   $("sc-pt-status").textContent = text;
+  $("sc-pt-status").title = text || ""; // cut to one line: the whole of it
+  if (text && fade) ptStatusTimer = setTimeout(() => ptStatus(""), PT_STATUS_FADE_MS);
 }
 
 /** The pianos in the select, those already rendered for these notes marked
@@ -436,8 +451,28 @@ async function ptRefreshReady() {
   const r = await api(`${API}/pianoteq/ready`).catch(() => null);
   if (!r) return null;
   pt.ready = new Set(r.ready || []);
+  pt.variants = new Set(r.variants || []);
   ptLabels();
+  ptSpeedMarks();
   return r;
+}
+
+/** ✓ on the speeds Pianoteq already has (both hands, right, left): those
+ *  play at once. Asked again while some are missing (the server makes them
+ *  in the background). */
+function ptSpeedMarks() {
+  let missing = 0;
+  for (const b of document.querySelectorAll("[data-speed]")) {
+    const v = b.dataset.speed;
+    const have = ["both", "R", "L"].filter((h) => pt.variants.has(`${v}:${h}`));
+    b.classList.toggle("sc-pt-ready", have.length === 3);
+    b.title = have.length === 3
+      ? `${v} %: Pianoteq listo (ambas manos, derecha e izquierda)`
+      : `${v} %${pt.setup ? ` · Pianoteq: ${have.length ? `${have.length} de 3 listas` : "aún no"} (se genera en segundo plano)` : ""}`;
+    if (have.length < 3) missing += 1;
+  }
+  clearTimeout(pt.marksTimer);
+  if (pt.setup && missing) pt.marksTimer = setTimeout(ptRefreshReady, 20000);
 }
 
 async function pianoteqSetup() {
@@ -451,13 +486,14 @@ async function pianoteqSetup() {
   sel.innerHTML = "";
   for (const name of info.presets) sel.add(new Option(name, name));
   // This song's own piano first (the one it was last heard with), then the
-  // last one chosen on any song (for a song never heard with Pianoteq), then
-  // Pianoteq's default. It used to be the last one chosen anywhere, so every
-  // song opened re-rendered itself with it and forgot its own.
+  // default piano (the server's: Bösendorfer VC Player when installed), then
+  // one already rendered for these notes. The last piano chosen on any song
+  // is no longer used: a song without its own piano took a Steinway chosen
+  // elsewhere and rendered itself again.
   const own = state.data?.pianoteq?.preset;
   const ready = await ptRefreshReady();
   const firstReady = ready?.ready?.[0];
-  sel.value = [own, firstReady, state.view.ptPreset, info.default].find((p) => p && info.presets.includes(p));
+  sel.value = [own, info.default, firstReady].find((p) => p && info.presets.includes(p));
   ptLabels();
   $("sc-source").querySelector('[value="pianoteq"]').hidden = false;
   $("sc-pt-slow-wrap").hidden = false;
@@ -484,9 +520,21 @@ function ptRequest() {
   return { preset: $("sc-pt-preset").value, hand, speed };
 }
 
+/** «Quitando N notas de Pianoteq», while the file playing still has them. */
+function ptRemovingText(secs) {
+  const n = pt.removing;
+  return `⏳ Pianoteq: quitando ${n} nota${n === 1 ? "" : "s"}${secs ? `… ${secs} s` : "…"} (sigue sonando la pista actual)`;
+}
+
 function pianoteqSoon() {
   clearTimeout(pt.timer);
-  ptStatus(player.ptStale ? "Pianoteq: actualizando tu edición (mientras, suena el MIDI)…" : "Pianoteq: cambios sin escuchar aún…");
+  ptStatus(
+    pt.removing && !player.ptStale
+      ? ptRemovingText()
+      : player.ptStale
+        ? "Pianoteq: actualizando tu edición (mientras, suena el MIDI)…"
+        : "Pianoteq: cambios sin escuchar aún…",
+  );
   pt.timer = setTimeout(pianoteqRender, 1200);
 }
 
@@ -497,18 +545,30 @@ async function pianoteqRender() {
   const body = ptRequest();
   const { preset } = body;
   const what = `${preset}${body.hand ? ` (solo mano ${body.hand === "R" ? "derecha" : "izquierda"})` : ""}${body.speed !== 1 ? ` a ${Math.round(body.speed * 100)} %` : ""}`;
-  // A file of the other hand would play the hand the player is playing: the
-  // synth (which has the right hand) plays until the new one is there.
-  if (pt.key && body.hand !== pt.hand) player.setPianoteqStale(true);
   try {
     let st = await api(`${API}/pianoteq`, { method: "POST", body });
-    if (st.state === "rendering") ptStatus(`Pianoteq: generando con ${what}…`);
+    if (ticket !== pt.ticket) return;
+    // Not ready: the file playing has the other hand(s) in it, the hand the
+    // player is playing among them. The synth (which has the right hands)
+    // plays until the new one is there. Ready (rendered beforehand: see
+    // the server, in the background), the new file just takes over.
+    if (st.state === "rendering") {
+      if (pt.key && body.hand !== pt.hand) player.setPianoteqStale(true);
+      ptStatus(`Pianoteq: generando con ${what}…`);
+    }
     const started = performance.now();
     while (st.state === "rendering") {
       await new Promise((r) => setTimeout(r, 1000));
       if (ticket !== pt.ticket) return; // superseded by a newer edit or preset
       st = await api(`${API}/pianoteq/status/${st.key}`);
+      // Skipped by the server for a newer one (another tab, the automatic
+      // render): asked again, which starts it if it is still the one wanted.
+      if (st.state === "none") st = await api(`${API}/pianoteq`, { method: "POST", body });
       const secs = Math.round((performance.now() - started) / 1000);
+      if (pt.removing && !player.ptStale) {
+        ptStatus(ptRemovingText(secs));
+        continue;
+      }
       const meanwhile = player.synthOnly ? " (mientras, suena el MIDI)" : pt.key ? " (mientras, suena el anterior)" : "";
       ptStatus(`Pianoteq: generando con ${what}… ${secs} s${meanwhile}`);
     }
@@ -523,7 +583,10 @@ async function pianoteqRender() {
     player.setUrls({ pianoteq: st.url }, { ptSpeed: body.speed });
     player.setPianoteqStale(false);
     if ($("sc-source").value === "pianoteq") player.setSource("pianoteq");
-    ptStatus(`Pianoteq: ${what} ✓`);
+    const gone = pt.removing;
+    pt.removing = 0;
+    ptStatus(gone ? `Pianoteq: ${gone === 1 ? "nota quitada" : `${gone} notas quitadas`} ✓` : `Pianoteq: ${what} ✓`, { fade: true });
+    ptRefreshReady(); // the ✓ on the speeds
   } catch (e) {
     if (ticket === pt.ticket) ptStatus(`Pianoteq: ${e.message}`);
   }
@@ -555,7 +618,8 @@ function apply(data) {
   const job = data.job || {};
   document.title = `Partitura — ${job.title || JOB}`;
   $("sc-title").textContent = job.title || JOB;
-  $("sc-sub").textContent = `Stem: ${stemName(STEM)} · motor: ${data.stats.engine || "?"}${data.edited ? " · editada" : ""}`;
+  const model = { demucs: "separado con Demucs", roformer: "separado con RoFormer", none: "solo piano, sin separar" }[job.separator];
+  $("sc-sub").textContent = `Stem: ${stemName(STEM)}${model ? ` · ${model}` : ""} · motor: ${data.stats.engine || "?"}${data.edited ? " · editada" : ""}`;
   $("sc-bpm").textContent = data.bpm ?? "–";
   $("sc-meter").textContent = data.meter;
   $("sc-key").textContent = data.key.name;
@@ -565,6 +629,7 @@ function apply(data) {
   $("sc-dl-xml").href = `${API}/export.musicxml`;
   syncControls();
   diagnostics();
+  showReviewed();
   return draw();
 }
 
@@ -597,8 +662,15 @@ function syncControls() {
   $("sc-pulse-select").querySelector('[value="audio"]').disabled = !d.stats.pulse_own_available;
   $("sc-zoom").value = state.view.zoom;
   $("sc-follow").checked = state.view.follow;
-  $("sc-undo").disabled = !state.history.canUndo;
-  $("sc-redo").disabled = !state.history.canRedo;
+  for (const [id, can, label, verb, key] of [
+    ["sc-undo", state.history.canUndo, state.history.undoLabel, "Deshacer", "Ctrl+Z"],
+    ["sc-redo", state.history.canRedo, state.history.redoLabel, "Rehacer", "Ctrl+Y"],
+    ["sc-undo2", state.history.canUndo, state.history.undoLabel, "Deshacer", "Ctrl+Z; en la tablet, toque con dos dedos sobre el piano"],
+    ["sc-redo2", state.history.canRedo, state.history.redoLabel, "Rehacer", "Ctrl+Y; en la tablet, toque con tres dedos"],
+  ]) {
+    $(id).disabled = !can;
+    $(id).title = `${verb}${label ? `: ${label}` : ""} (${key})`;
+  }
 }
 
 async function draw() {
@@ -656,6 +728,13 @@ function diagnostics() {
     ["Pulso", `${{ audio: "del audio transcrito", notes: "de las notas transcritas" }[s.pulse_source] || "de la canción"}${s.pulse_reason && s.pulse_reason !== "elegido" ? ` (${s.pulse_reason})` : ""}`],
     ["Pulsos insertados (tramos a medio tempo)", s.beats_inserted ?? 0],
     ["Dispositivo", s.device === "cuda" ? "GPU (CUDA)" : s.device === "cpu" ? "CPU" : s.device || "–"],
+    [
+      "Manos guardadas para reentrenar",
+      (() => {
+        const h = state.data.hand_labels || {};
+        return `${h.corrected || 0} nota${h.corrected === 1 ? "" : "s"} corregida${h.corrected === 1 ? "" : "s"} por ti${h.reviewed ? ` · canción revisada (${h.reviewed_notes} notas)` : ""}`;
+      })(),
+    ],
     ["Versión guardada", state.data.version],
     ["Tiempo de dibujo", state.ctx ? `${state.ctx.ms} ms` : "–"],
   ];
@@ -743,18 +822,40 @@ function saveState(kind, text) {
 
 /** Record the current notes for undo, then save `next`. */
 function edit(next, what) {
-  state.history.push(state.notes);
-  commit(next);
+  state.history.push(state.notes, what);
+  commit(next, what);
   status(`${what} · guardando…`);
 }
 
-function commit(next) {
+/** How many notes `next` only takes away from `prev` (nothing else
+ *  changed: the same note objects), else 0. */
+function onlyRemoved(prev, next) {
+  if (!prev || next.length >= prev.length) return 0;
+  const before = new Set(prev);
+  return next.every((n) => before.has(n)) ? prev.length - next.length : 0;
+}
+
+function commit(next, what = "") {
+  // Named in the saved history (several edits saved at once: all of them).
+  if (what && !state.pendingWhat.includes(what)) state.pendingWhat.push(what);
+  // Notes deleted while Pianoteq plays: its current file keeps playing (an
+  // extra note for a few seconds, not a jump to the MIDI synth's sound and
+  // the rhythm lost) until the render without them takes over, said by the
+  // floating status. Any other edit: the synth plays it at once, as before.
+  const listening = $("sc-source").value === "pianoteq";
+  const removed = pt.want && pt.key && listening && !player.ptStale ? onlyRemoved(state.notes, next) : 0;
   state.notes = next;
   fall.setNotes(next);
   // Heard at once, not after the server's answer: a deleted note scheduled
   // meanwhile still sounded. Pianoteq's file is behind until it re-renders.
   player.setNotes(next);
-  if (pt.want) player.setPianoteqStale(true);
+  if (removed) {
+    pt.removing += removed;
+    ptStatus(ptRemovingText());
+  } else if (pt.want) {
+    pt.removing = 0;
+    player.setPianoteqStale(true);
+  }
   state.pending = next;
   syncControls();
   flush();
@@ -763,14 +864,18 @@ function commit(next) {
 async function flush() {
   if (state.saving || !state.pending) return;
   const notes = state.pending;
+  const what = state.pendingWhat.join(" + ").slice(0, 160) || null;
   state.pending = null;
+  state.pendingWhat = [];
   state.saving = true;
   saveState("", "Guardando…");
   try {
-    const data = await api(`${API}/notes`, { method: "PUT", body: { notes: savedNotes(notes) } });
+    const data = await api(`${API}/notes`, { method: "PUT", body: { notes: savedNotes(notes), what } });
+    if (!$("sc-history").hidden) renderHistory();
     if (!state.pending) {
       await apply(data);
       saveState("ok", `Guardado ✓ (versión ${data.version})`);
+      reportHandEdit(data);
     }
   } catch (e) {
     saveState("err", `No se pudo guardar: ${e.message}`);
@@ -892,8 +997,14 @@ function onKey(e) {
     e.preventDefault();
     return select(state.notes.map((n) => n.id));
   }
-  if (k === "Escape") return state.adding ? setAdding(false) : select([]);
+  if (k === "Escape") return state.adding ? setAdding(false) : state.painting ? setPainting(false) : select([]);
   if (!ctrl && k.toLowerCase() === "n") return setAdding(!state.adding);
+  // The piano view: + shows fewer seconds (notes spread out), − more (closer
+  // together: more of what is coming on screen).
+  if (!ctrl && state.view.fall && ["+", "=", "-", "_"].includes(k)) {
+    e.preventDefault();
+    return setAhead(clampAhead(state.view.fallAhead) * (k === "+" || k === "=" ? 1 / AHEAD_FACTOR : AHEAD_FACTOR), { hint: true });
+  }
   if (k === "Tab") {
     e.preventDefault();
     const id = neighbour(state.notes, ids[ids.length - 1], e.shiftKey ? -1 : 1);
@@ -926,7 +1037,8 @@ function onKey(e) {
     what = e.shiftKey ? "Duración" : "Movida";
   } else if (k.toLowerCase() === "h") {
     next = toggleHand(state.notes, ids);
-    what = "Cambio de clave";
+    what = "Cambio de mano";
+    noteHandEdit(ids);
   } else if (k.toLowerCase() === "a" && !ctrl) {
     const n = state.notes.find((x) => x.id === ids[0]);
     if (n) openChordDialog(Math.round(n.q_start * 1000), "");
@@ -941,17 +1053,112 @@ function onKey(e) {
 function undo() {
   const prev = state.history.undo(state.notes);
   if (prev) {
-    commit(prev);
-    status("Deshecho · guardando…");
-  }
+    const what = state.history.label;
+    commit(prev, what ? `Deshacer: ${what}` : "Deshacer");
+    status(`Deshecho${what ? `: ${what}` : ""} · guardando…`);
+    toast(`↶ Deshecho${what ? `: ${what}` : ""}`);
+  } else toast("Nada que deshacer");
 }
 
 function redo() {
   const next = state.history.redo(state.notes);
   if (next) {
-    commit(next);
-    status("Rehecho · guardando…");
+    const what = state.history.label;
+    commit(next, what ? `Rehacer: ${what}` : "Rehacer");
+    status(`Rehecho${what ? `: ${what}` : ""} · guardando…`);
+    toast(`↷ Rehecho${what ? `: ${what}` : ""}`);
+  } else toast("Nada que rehacer");
+}
+
+/** «Volver al original»: the transcription, no edit. One more entry in the
+ *  history (and Undo goes back to the edits). */
+async function resetToOriginal() {
+  if (!(await confirmDialog("¿Volver a la partitura como salió de la transcripción, sin ninguna edición? (Queda en el historial: se puede deshacer.)"))) return;
+  const what = "Volver al original";
+  state.history.push(state.notes, what);
+  saveState("", "Restaurando…");
+  await apply(await api(`${API}/notes`, { method: "DELETE" }));
+  saveState("ok", "Original restaurado ✓");
+  toast("Partitura sin ediciones ✓ (↶ para deshacer)");
+  if (!$("sc-history").hidden) renderHistory();
+}
+
+/** How an entry of the history changed its notes, in a few words. */
+function historyDetail(e) {
+  const flats = (state.data?.key?.fifths ?? 0) < 0;
+  const names = state.data?.names === "letters" ? "letters" : "solfege";
+  const name = (n) => midiName(n.midi, { flats, names });
+  const parts = (e.notes || []).map(({ from, to }) => {
+    if (from && to) {
+      if (from.midi !== to.midi) return `${name(from)} → ${name(to)} en ${formatTime(to.start)}`;
+      if (Math.abs(from.start - to.start) > 0.005) return `${name(to)} ${formatTime(from.start)} → ${formatTime(to.start)}`;
+      return `${name(to)} en ${formatTime(to.start)}`;
+    }
+    return from ? `−${name(from)} en ${formatTime(from.start)}` : `+${name(to)} en ${formatTime(to.start)}`;
+  });
+  const changed = Math.max(e.before, e.after);
+  if (changed > parts.length) parts.push(`y ${changed - parts.length} más`);
+  return parts.join(" · ");
+}
+
+/** «🕘 Historial»: every saved edit, newest first; any one can be gone back
+ *  on (it and those after it are undone, as one more edit). */
+async function renderHistory() {
+  const list = $("sc-history-list");
+  let h;
+  try {
+    h = await api(`${API}/history`);
+  } catch (e) {
+    list.innerHTML = `<li class="sc-muted"></li>`;
+    list.firstChild.textContent = `No se pudo leer el historial: ${e.message}`;
+    return;
   }
+  list.innerHTML = "";
+  if (!h.entries.length) {
+    list.innerHTML = `<li class="sc-muted">Aún no hay ediciones guardadas en esta partitura.</li>`;
+    return;
+  }
+  const now = Date.now() / 1000;
+  h.entries.forEach((e, i) => {
+    const li = document.createElement("li");
+    const ago = Math.max(0, now - (e.at || now));
+    const when = ago < 60 ? "recién" : ago < 3600 ? `hace ${Math.round(ago / 60)} min` : ago < 86400 ? `hace ${Math.round(ago / 3600)} h` : `hace ${Math.round(ago / 86400)} d`;
+    li.innerHTML = `<span class="sc-history-list-what"></span><span></span><span class="sc-muted"></span><button class="sc-btn" type="button"></button>`;
+    li.children[0].textContent = e.what || "Edición";
+    li.children[1].textContent = historyDetail(e);
+    li.children[2].textContent = when;
+    const btn = li.querySelector("button");
+    btn.textContent = i === 0 ? "↶ Deshacer esta" : "↶ Volver a antes de esta";
+    btn.title = i === 0 ? "Deshace esta edición" : `Deshace esta edición y las ${i} posteriores (queda en el historial: se puede volver)`;
+    btn.onclick = () => undoTo(e, i);
+    list.appendChild(li);
+  });
+}
+
+async function undoTo(entry, later) {
+  if (later && !(await confirmDialog(`¿Volver a antes de «${entry.what || "Edición"}»? Se deshacen esa edición y las ${later} posteriores (queda en el historial: se puede volver).`))) return;
+  const what = `Volver a antes de «${entry.what || "Edición"}»`;
+  state.history.push(state.notes, what);
+  saveState("", "Volviendo…");
+  try {
+    await apply(await api(`${API}/history/${entry.v}/undo`, { method: "POST" }));
+    saveState("ok", "Guardado ✓");
+    toast(`↶ ${what}`);
+  } catch (e) {
+    saveState("err", `No se pudo: ${e.message}`);
+  }
+  renderHistory();
+}
+
+let toastTimer = 0;
+/** A short line over the page (the score's status line is hidden in the
+ *  piano view, and on a tablet it is far from the finger). */
+function toast(text) {
+  const el = $("sc-toast");
+  el.textContent = text;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (el.hidden = true), 2200);
 }
 
 function scrollToNote(id) {
@@ -1046,6 +1253,9 @@ function wirePointer() {
   });
   wireFallPointer();
   $("sc-edit-del").onclick = deleteSelected;
+  for (const b of document.querySelectorAll("[data-sethand]")) {
+    b.onclick = () => setHands(selected(), b.dataset.sethand || null);
+  }
   for (const b of document.querySelectorAll("[data-finger]")) {
     b.onclick = () => fingers.set(selected(), Number(b.dataset.finger) || null);
   }
@@ -1152,6 +1362,7 @@ function dragScoreNotes(d, e) {
 // «＋ Nota» ------------------------------------------------------------------
 
 function setAdding(on) {
+  if (on && state.painting) setPainting(false);
   state.adding = on;
   document.body.classList.toggle("sc-adding", on);
   for (const id of ["sc-add", "sc-fall-add"]) $(id).setAttribute("aria-pressed", String(on));
@@ -1231,6 +1442,12 @@ function addOnScore(clientX, clientY) {
 // The piano view: tap a falling note to select it (playing or paused), drag
 // it: across = semitones (key by key), up/down = grid steps in time (down is
 // earlier, towards the keys). Tapping empty space clears the selection.
+const AHEAD_FACTOR = 1.25; // one + / − press
+const PINCH_START_PX = 14; // fingers this much closer or apart: a pinch, not a tap
+const MULTI_TAP_MS = 400; // two (three) fingers down and up within this: undo (redo)
+const DOUBLE_TAP_MS = 400;
+const DOUBLE_TAP_PX = 40;
+
 function wireFallPointer() {
   const host = $("sc-fall");
   let d = null;
@@ -1238,8 +1455,61 @@ function wireFallPointer() {
   // The bar's bottom (its start) under the pointer: a resize cursor; drag it
   // down onto the note before on the same key and the two become one.
   let adding = null; // a note being placed: { midi, start, end, y }
-  let scrub = null; // the song being moved by a drag up or down: { y, t0, wasPlaying, moved }
+  let scrub = null; // the song being moved by a drag up or down: { y, t0, wasPlaying, moved, trail }
+  // Let go while moving, the song keeps going and slows down (a feed's
+  // flick): { v (song s per s), at (ms), wasPlaying, raf }. A press stops it.
+  let glide = null;
+  const stopGlide = () => {
+    const g = glide;
+    glide = null;
+    if (g) cancelAnimationFrame(g.raf);
+    return g;
+  };
+  const glideFrame = (now) => {
+    const g = glide;
+    if (!g) return;
+    // ▶ pressed meanwhile: it plays from here, the glide is over.
+    if (player.playing) return void stopGlide();
+    const dt = Math.min(0.05, (now - g.at) / 1000);
+    g.at = now;
+    const step = glideStep(player.time, g.v, dt, player.duration || Infinity);
+    g.v = step.v;
+    player.seek(step.t);
+    status(`⇅ ${formatTime(step.t)}`);
+    if (step.done) {
+      stopGlide();
+      status();
+      if (g.wasPlaying) player.play();
+      return;
+    }
+    g.raf = requestAnimationFrame(glideFrame);
+  };
+  // Two fingers: a pinch changes «Notas a la vista» (apart: fewer seconds,
+  // the notes spread out; together: more, closer). Whatever the first finger
+  // had started is dropped. Ctrl + wheel, and a trackpad pinch (the browser
+  // sends it as one), do the same.
+  const touches = new Map(); // pointerId -> {x, y}: touch pointers down
+  let pinch = null; // { d0, ahead0 }
+  const spread = () => {
+    const [a, b] = [...touches.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  };
+  host.addEventListener(
+    "wheel",
+    (e) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault(); // not the page's zoom
+      setAhead(clampAhead(state.view.fallAhead) * Math.exp(e.deltaY * 0.004), { hint: true });
+    },
+    { passive: false },
+  );
+  let paint = null; // «Corregir manos»: a stroke painting notes: { ids: Set, x, y }
+  const paintPreview = () => fall.setPaint({ hand: state.paintHand || null, ids: paint.ids }, true);
   const edgeCursor = (e) => {
+    if (state.painting) {
+      host.style.cursor = "crosshair";
+      return;
+    }
     if (d || edge || adding || scrub) return;
     if (state.adding) host.style.cursor = fall.pointAt(e.clientX, e.clientY) ? "crosshair" : "";
     else host.style.cursor = fall.edgeTest(e.clientX, e.clientY) ? "ns-resize" : "";
@@ -1254,7 +1524,43 @@ function wireFallPointer() {
   };
   host.addEventListener("pointermove", edgeCursor);
   host.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "touch") touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touches.size === 2) {
+      // The second finger: a pinch, nothing else (no scrub, drag or edit).
+      if (scrub?.moved && scrub.wasPlaying) player.play();
+      scrub = d = edge = adding = null;
+      if (paint) {
+        paint = null;
+        fall.setPaint(null, state.painting);
+      }
+      fall.setPreview(null);
+      host.style.cursor = "";
+      pinch = { d0: Math.max(20, spread()), ahead0: clampAhead(state.view.fallAhead), at: performance.now(), moved: false, max: 2 };
+      e.preventDefault();
+      return;
+    }
+    if (pinch) {
+      pinch.max = Math.max(pinch.max, touches.size); // three fingers: redo
+      return;
+    }
     if (e.button !== 0) return;
+    const caught = stopGlide();
+    if (caught && !state.painting && !state.adding) {
+      // A press on a gliding song catches it: held, or dragged on from here.
+      scrub = { id: null, add: false, x: e.clientX, y: e.clientY, t0: player.time, wasPlaying: caught.wasPlaying, moved: false, caught: true, trail: [] };
+      host.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
+    // «Corregir manos»: what the stroke touches takes the brush's hand (even
+    // while it plays: no scrubbing in this mode).
+    if (state.painting) {
+      paint = { ids: fall.hitsAlong(e.clientX, e.clientY, e.clientX, e.clientY), x: e.clientX, y: e.clientY };
+      paintPreview();
+      host.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
     if (state.adding) {
       const p = fall.pointAt(e.clientX, e.clientY);
       if (!p) return;
@@ -1281,7 +1587,7 @@ function wireFallPointer() {
     const id = fall.hitTest(e.clientX, e.clientY);
     const add = e.shiftKey || e.ctrlKey || e.metaKey;
     if (!id || playing) {
-      scrub = { id, add, x: e.clientX, y: e.clientY, t0: player.time, wasPlaying: playing, moved: false };
+      scrub = { id, add, x: e.clientX, y: e.clientY, t0: player.time, wasPlaying: playing, moved: false, trail: [] };
       host.setPointerCapture(e.pointerId);
       e.preventDefault();
       return;
@@ -1292,6 +1598,23 @@ function wireFallPointer() {
     host.setPointerCapture(e.pointerId);
   });
   host.addEventListener("pointermove", (e) => {
+    if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch) {
+      if (touches.size !== 2) return;
+      const d = Math.max(20, spread());
+      // A tap with two fingers moves them a little: not a pinch yet.
+      if (!pinch.moved && Math.abs(d - pinch.d0) < PINCH_START_PX) return;
+      pinch.moved = true;
+      setAhead(pinch.ahead0 * (pinch.d0 / d), { hint: true });
+      return;
+    }
+    if (paint) {
+      for (const id of fall.hitsAlong(paint.x, paint.y, e.clientX, e.clientY)) paint.ids.add(id);
+      paint.x = e.clientX;
+      paint.y = e.clientY;
+      paintPreview();
+      return;
+    }
     if (scrub) {
       if (!scrub.moved && Math.abs(e.clientY - scrub.y) < 6) return;
       if (!scrub.moved) {
@@ -1306,6 +1629,7 @@ function wireFallPointer() {
       const end = player.duration || Infinity;
       const t = Math.max(0, Math.min(end - 0.05, scrub.t0 - dd.sec));
       player.seek(t);
+      trackFlick(scrub.trail, performance.now(), t);
       status(`⇅ ${formatTime(t)}${scrub.wasPlaying ? " — suelta para seguir" : ""}`);
       return;
     }
@@ -1384,21 +1708,191 @@ function wireFallPointer() {
     if (apply) placeNote({ midi: a.midi, start: a.start, end: a.end, hand: null });
     else fall.setSelection(new Set(state.selection));
   };
+  // Two taps (or clicks) on empty space, close in time and place: play or
+  // pause. Pointer events, so a finger and a mouse do the same.
+  let lastEmptyTap = null; // { at (ms), x, y }
+  const emptyTap = (s) => {
+    const now = performance.now();
+    const prev = lastEmptyTap;
+    if (prev && now - prev.at < DOUBLE_TAP_MS && Math.hypot(s.x - prev.x, s.y - prev.y) < DOUBLE_TAP_PX) {
+      lastEmptyTap = null;
+      togglePlay();
+      return true;
+    }
+    lastEmptyTap = { at: now, x: s.x, y: s.y };
+    return false;
+  };
   const endScrub = () => {
     const s = scrub;
     scrub = null;
     host.style.cursor = "";
     if (!s.moved) {
-      // A tap: as before, it selects the note under it (or clears).
+      if (!s.id && !s.add && !s.caught && emptyTap(s)) return;
+      if (s.caught) {
+        // A tap that stopped a glide: only that.
+        status();
+        if (s.wasPlaying) player.play();
+        return;
+      }
+      // A tap: as before, it selects the note under it (or clears). Playing,
+      // a note tapped is one to change: the song stops there, so the note
+      // stays under the finger and the edit bar's buttons can reach it.
+      if (s.id && s.wasPlaying) {
+        player.pause();
+        status("En pausa para editar la nota (▶ o Espacio para seguir)");
+      }
       if (s.id) select([s.id], { add: s.add });
       else if (!s.add) select([]);
+      return;
+    }
+    const v = flickSpeed(s.trail, performance.now());
+    if (Math.abs(v) >= GLIDE_START) {
+      glide = { v, at: performance.now(), wasPlaying: s.wasPlaying, raf: 0 };
+      glide.raf = requestAnimationFrame(glideFrame);
       return;
     }
     status();
     if (s.wasPlaying) player.play();
   };
-  host.addEventListener("pointerup", () => (scrub ? endScrub() : adding ? endAdd(true) : edge ? endEdge(true) : end(true)));
-  host.addEventListener("pointercancel", () => (scrub ? endScrub() : adding ? endAdd(false) : edge ? endEdge(false) : end(false)));
+  const endPaint = (apply) => {
+    const p = paint;
+    paint = null;
+    fall.setPaint(null, state.painting);
+    if (apply && p.ids.size) setHands([...p.ids], state.paintHand || null);
+  };
+  // A pinch ends when both fingers are up; the one lifted first does nothing.
+  const fingerUp = (e) => {
+    touches.delete(e.pointerId);
+    if (!pinch) return false;
+    if (!touches.size) {
+      // Two fingers tapped (down and up, not pinched): undo; three: redo.
+      const p = pinch;
+      pinch = null;
+      if (!p.moved && performance.now() - p.at < MULTI_TAP_MS) (p.max >= 3 ? redo : undo)();
+    }
+    return true;
+  };
+  host.addEventListener("pointerup", (e) => fingerUp(e) || (paint ? endPaint(true) : scrub ? endScrub() : adding ? endAdd(true) : edge ? endEdge(true) : end(true)));
+  host.addEventListener("pointercancel", (e) => fingerUp(e) || (paint ? endPaint(false) : scrub ? endScrub() : adding ? endAdd(false) : edge ? endEdge(false) : end(false)));
+}
+
+// ── hands: corrections, «🖌 Corregir manos», colours ────────────────────
+
+/** A hand correction is being saved: remember each note's staff, to say
+ *  afterwards how many notes around it the program moved with it. */
+function noteHandEdit(ids) {
+  state.handEdit = { ids: new Set(ids), staff: new Map(state.notes.map((n) => [n.id, n.staff])) };
+}
+
+/** Set the hand of `ids` ("R" / "L"; null = the program decides again). */
+function setHands(ids, hand) {
+  const set = new Set(ids);
+  const changing = state.notes.filter((n) => set.has(n.id) && (n.hand ?? null) !== hand).length;
+  if (!changing) return;
+  noteHandEdit(ids);
+  const one = changing === 1;
+  const what = hand
+    ? `Mano ${hand === "R" ? "derecha" : "izquierda"}: ${changing} nota${one ? "" : "s"}`
+    : `${changing} nota${one ? "" : "s"} vuelve${one ? "" : "n"} a la mano que elija el programa`;
+  edit(setNoteHands(state.notes, ids, hand), what);
+  handsMsg(`${what} · guardando…`);
+}
+
+/** After the save: the notes around a correction that the program changed
+ *  too (the model reads the hands set by the user as hints). */
+function reportHandEdit(data) {
+  const h = state.handEdit;
+  if (!h) return;
+  state.handEdit = null;
+  let moved = 0;
+  for (const n of data.notes) if (!h.ids.has(n.id) && h.staff.has(n.id) && h.staff.get(n.id) !== n.staff) moved++;
+  const around = moved ? ` · el programa ajustó además ${moved} nota${moved === 1 ? "" : "s"} de alrededor` : "";
+  handsMsg(`Mano corregida ✓${around}`);
+  saveState("ok", `Guardado ✓ (versión ${data.version})${around}`);
+  if (around) status(`Mano corregida ✓${around}`);
+}
+
+let handsMsgTimer = 0;
+/** A line next to «🖌 Corregir manos» (the score's status line is hidden in
+ *  the piano view); it goes away after a while unless the brush is on. */
+function handsMsg(text) {
+  $("sc-hands-msg").textContent = text || "";
+  $("sc-hands-msg").title = text || ""; // cut to one line: the whole of it
+  clearTimeout(handsMsgTimer);
+  if (text && !state.painting) handsMsgTimer = setTimeout(() => handsMsg(""), 8000);
+}
+
+function setPainting(on) {
+  if (on && state.adding) setAdding(false);
+  state.painting = on;
+  document.body.classList.toggle("sc-painting", on);
+  $("sc-paint").setAttribute("aria-pressed", String(on));
+  $("sc-paint-pick").hidden = !on;
+  $("sc-fall").style.cursor = on ? "crosshair" : "";
+  // Painting hands needs to see them.
+  if (on && state.view.fallColors !== "hands") {
+    state.view.fallColors = "hands";
+    setFallView(true);
+  }
+  fall.setPaint(null, on);
+  handsMsg(on ? "Toca o arrastra sobre las notas para cambiarles la mano · ● = mano que pusiste tú · Esc para terminar" : "");
+}
+
+function setPaintHand(hand) {
+  state.paintHand = hand;
+  for (const b of document.querySelectorAll("[data-paint]")) b.setAttribute("aria-pressed", String(b.dataset.paint === hand));
+}
+
+/** The hands' colours: the falling notes, the swatches, the pickers. */
+function applyHandColors() {
+  const c = state.view.handColors || null;
+  fall.setHandColors(c);
+  const root = document.documentElement.style;
+  root.setProperty("--hand-r", c?.R || HAND_COLORS.R);
+  root.setProperty("--hand-l", c?.L || HAND_COLORS.L);
+  $("sc-color-r").value = c?.R || HAND_COLORS.R;
+  $("sc-color-l").value = c?.L || HAND_COLORS.L;
+  $("sc-color-reset").hidden = !c;
+}
+
+/** «✓ Canción revisada»: pressed when the whole song's hands are kept as
+ *  confirmed (training data for the hand model, hand_labels.py). */
+function showReviewed() {
+  const on = !!state.data?.hand_labels?.reviewed;
+  const b = $("sc-reviewed");
+  b.setAttribute("aria-pressed", String(on));
+  b.textContent = on ? "✓ Canción revisada" : "Marcar canción revisada";
+}
+
+async function toggleReviewed() {
+  const on = !!state.data?.hand_labels?.reviewed;
+  if (!on && !(await confirmDialog("¿Las manos de toda esta canción están bien? Se guardan como correctas para entrenar el modelo más adelante. Márcala solo después de revisarla entera (puedes quitar la marca cuando quieras)."))) return;
+  try {
+    const data = await api(`${API}/hands/reviewed`, { method: on ? "DELETE" : "POST" });
+    await apply(data);
+    handsMsg(on ? "Ya no está marcada como revisada" : "Canción marcada como revisada ✓ · sus manos quedan guardadas para entrenar");
+  } catch (e) {
+    handsMsg(`No se pudo guardar: ${e.message}`);
+  }
+}
+
+function wireHands() {
+  $("sc-reviewed").onclick = toggleReviewed;
+  $("sc-paint").onclick = () => setPainting(!state.painting);
+  for (const b of document.querySelectorAll("[data-paint]")) b.onclick = () => setPaintHand(b.dataset.paint);
+  const pick = () => {
+    state.view.handColors = { R: $("sc-color-r").value, L: $("sc-color-l").value };
+    writeView();
+    applyHandColors();
+  };
+  $("sc-color-r").oninput = pick;
+  $("sc-color-l").oninput = pick;
+  $("sc-color-reset").onclick = () => {
+    state.view.handColors = null;
+    writeView();
+    applyHandColors();
+  };
+  applyHandColors();
 }
 
 // dialogs: resolved from the form's submit (which carries the button that
@@ -1512,8 +2006,8 @@ function toggleLoop() {
 function loopAgain(a) {
   practice.loops += 1;
   practice.bestSpeed = Math.max(practice.bestSpeed, Math.round(player.rate * 100));
-  const step = Number($("sc-loop-ramp").value) || 0;
-  const next = rampSpeed(Math.round(player.rate * 100), step, 100);
+  const every = Number($("sc-loop-ramp").value) || 0;
+  const next = rampSpeed(Math.round(player.rate * 100), every, practice.loops);
   player.seek(a);
   mk.doneAt = -Infinity;
   if (next !== Math.round(player.rate * 100)) {
@@ -1526,16 +2020,42 @@ function loopAgain(a) {
   }
 }
 
-/** The hand the player plays: the other one alone in the MIDI and Pianoteq,
- *  the player's own drawn bright and the other faint on the piano. */
+/** «🔇 Silenciar»: the hand the player plays. It is silent in the MIDI and
+ *  Pianoteq (the other one sounds alone) and drawn faint, outlined dashed,
+ *  on the piano. "" = both sound. */
 function setHand(hand) {
   state.hand = hand === "R" || hand === "L" ? hand : "";
-  $("sc-hand").value = state.hand;
-  player.setSilentStaff(state.hand === "R" ? 1 : state.hand === "L" ? 2 : 0);
-  fall.setOptions({ dimStaff: state.hand === "R" ? 2 : state.hand === "L" ? 1 : 0 });
+  const staff = state.hand === "R" ? 1 : state.hand === "L" ? 2 : 0;
+  for (const b of document.querySelectorAll("[data-mute]")) {
+    const on = b.dataset.mute === state.hand;
+    const name = b.dataset.mute === "R" ? "derecha" : "izquierda";
+    b.setAttribute("aria-pressed", String(on));
+    b.querySelector(".sc-mute-icon").textContent = on ? "🔇" : "🔈";
+    b.title = on ? `Mano ${name} silenciada: la tocas tú. Pulsa para que vuelva a sonar` : `Silenciar la mano ${name} para tocarla tú`;
+  }
+  player.setSilentStaff(staff);
+  fall.setOptions({ dimStaff: staff });
   fall.redraw();
   handHint();
   saveSong({ hand: state.hand });
+}
+
+/** A press on «🔇 Derecha» / «🔇 Izquierda»: silence that hand, or (pressed
+ *  again) let both sound. The recording (stem, song) has both hands in it,
+ *  so a hand is silenced on the MIDI or Pianoteq: switch to it. */
+function toggleMute(hand) {
+  const next = state.hand === hand ? "" : hand;
+  setHand(next);
+  const src = $("sc-source");
+  if (next && src.value !== "midi" && src.value !== "pianoteq") {
+    const opt = src.querySelector('[value="pianoteq"]');
+    src.value = opt && !opt.hidden ? "pianoteq" : "midi";
+    src.onchange?.();
+  } else if (pt.want) {
+    pianoteqRender();
+  }
+  const name = hand === "R" ? "derecha" : "izquierda";
+  status(next ? `🔇 Mano ${name} silenciada: tócala tú (sus notas se ven tenues y punteadas)` : "Suenan ambas manos");
 }
 
 function handHint() {
@@ -1733,10 +2253,7 @@ function wirePractice() {
   };
   $("sc-loop-toggle").onclick = toggleLoop;
   $("sc-loop-clear").onclick = () => setLoop(null);
-  $("sc-hand").onchange = () => {
-    setHand($("sc-hand").value);
-    if (pt.want) pianoteqRender();
-  };
+  for (const b of document.querySelectorAll("[data-mute]")) b.onclick = () => toggleMute(b.dataset.mute);
   $("sc-metronome").checked = !!state.view.metronome;
   player.metronome = !!state.view.metronome;
   $("sc-metronome").onchange = () => {
@@ -1783,8 +2300,106 @@ function wirePractice() {
   document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && leave());
 }
 
+const QM_AWAKE_MS = 2500; // the ⚙ stays lit this long after the page is touched
+const QM_CLOSE_MS = 6000; // the open menu closes after this long untouched
+
+/** «⚙» quick menu (panels hidden or full screen): edit notes, add a note,
+ *  undo, speed, mute a hand, fingers, how much is on screen, panels, full
+ *  screen. Each item does what its control on the bars does. */
+function wireQuickMenu() {
+  const gear = $("sc-qm-gear");
+  const menu = $("sc-qm-menu");
+  let awake = 0;
+  let closing = 0;
+  const wake = () => {
+    document.body.classList.add("sc-qm-awake");
+    clearTimeout(awake);
+    awake = setTimeout(() => document.body.classList.remove("sc-qm-awake"), QM_AWAKE_MS);
+  };
+  for (const ev of ["pointerdown", "pointermove", "keydown", "wheel", "touchstart"]) {
+    document.addEventListener(ev, wake, { passive: true });
+  }
+  const close = () => {
+    clearTimeout(closing);
+    menu.hidden = true;
+    gear.setAttribute("aria-expanded", "false");
+  };
+  const keepOpen = () => {
+    clearTimeout(closing);
+    closing = setTimeout(close, QM_CLOSE_MS);
+  };
+  const refresh = () => {
+    const speed = Math.round(player.rate * 100);
+    for (const b of menu.querySelectorAll("[data-qm-speed]")) {
+      b.setAttribute("aria-pressed", String(Number(b.dataset.qmSpeed) === speed));
+      const main = document.querySelector(`#sc-speed [data-speed="${b.dataset.qmSpeed}"]`);
+      b.classList.toggle("sc-pt-ready", !!main?.classList.contains("sc-pt-ready"));
+    }
+    for (const b of menu.querySelectorAll("[data-qm-mute]")) b.setAttribute("aria-pressed", String(state.hand === b.dataset.qmMute));
+    menu.querySelector('[data-qm="edit"]').setAttribute("aria-pressed", String(document.body.classList.contains("sc-qm-edit")));
+    menu.querySelector('[data-qm="add"]').setAttribute("aria-pressed", String(!!state.adding));
+    menu.querySelector('[data-qm="undo"]').disabled = !state.history.canUndo;
+    const fing = menu.querySelector('[data-qm="fingers"]');
+    const offer = !$("sc-fall-fingers-on").hidden;
+    fing.hidden = !offer && !fingers.available;
+    fing.textContent = offer ? "🖐 Activar dedos" : "🖐 Ver dedos";
+    fing.setAttribute("aria-pressed", String(!offer && fingers.visible()));
+    $("sc-qm-ahead").textContent = aheadLabel(state.view.fallAhead);
+    menu.querySelector('[data-qm="panels"]').hidden = !state.view.bare;
+    menu.querySelector('[data-qm="fs"]').textContent = state.fs ? "⛶ Salir de pantalla completa" : "⛶ Pantalla completa";
+  };
+  gear.onclick = () => {
+    if (!menu.hidden) return close();
+    refresh();
+    menu.hidden = false;
+    gear.setAttribute("aria-expanded", "true");
+    keepOpen();
+  };
+  menu.addEventListener("pointerdown", keepOpen);
+  menu.addEventListener("pointermove", keepOpen);
+  // A tap elsewhere closes it (the piano, the notes).
+  document.addEventListener("pointerdown", (e) => {
+    if (!menu.hidden && !e.target.closest("#sc-qm")) close();
+  });
+  const actions = {
+    edit: () => {
+      const on = !document.body.classList.contains("sc-qm-edit");
+      document.body.classList.toggle("sc-qm-edit", on);
+      toast(on ? "✏️ Toca una nota para cambiarla" : "Edición cerrada");
+      if (!on) select([]);
+    },
+    add: () => setAdding(!state.adding),
+    undo: () => undo(),
+    fingers: () => {
+      if (!$("sc-fall-fingers-on").hidden) return $("sc-fall-fingers-on").click();
+      const sel = $("sc-fall-fingers");
+      sel.value = fingers.visible() ? state.view.fallNames || "letters" : "finger";
+      sel.dispatchEvent(new Event("change"));
+    },
+    "ahead-": () => setAhead(clampAhead(state.view.fallAhead) / AHEAD_FACTOR, { hint: true }),
+    "ahead+": () => setAhead(clampAhead(state.view.fallAhead) * AHEAD_FACTOR, { hint: true }),
+    panels: () => {
+      close();
+      setBare(false);
+    },
+    fs: () => toggleFullscreen(),
+  };
+  menu.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.dataset.qmSpeed) setSpeed(Number(b.dataset.qmSpeed));
+    else if (b.dataset.qmMute) toggleMute(b.dataset.qmMute);
+    else actions[b.dataset.qm]?.();
+    // A setting stays open to change it again; an action leaves the menu.
+    if (["edit", "add", "fingers", "fs"].includes(b.dataset.qm)) close();
+    else refresh();
+  });
+}
+
 function wireControls() {
   wirePractice();
+  wireHands();
+  wireQuickMenu();
   $("sc-play").onclick = () => togglePlay();
   $("sc-mini-play").onclick = () => togglePlay();
   $("sc-bare").onclick = () => setBare(true);
@@ -1795,7 +2410,9 @@ function wireControls() {
   $("sc-view-toggle").onclick = () => setFallView(!state.view.fall);
   $("sc-controls-toggle").onclick = () => setCompact(!state.view.compact);
   setCompact(!!state.view.compact);
-  for (const [id, key] of [["sc-fall-keys", "fallKeys"], ["sc-fall-colors", "fallColors"], ["sc-fall-names", "fallNames"], ["sc-fall-style", "fallStyle"], ["sc-fall-ahead", "fallAhead"]]) {
+  $("sc-fall-ahead").oninput = () => setAhead(aheadFromSlider($("sc-fall-ahead").value));
+  $("sc-fall-ahead").ondblclick = () => setAhead(4, { hint: true });
+  for (const [id, key] of [["sc-fall-keys", "fallKeys"], ["sc-fall-colors", "fallColors"], ["sc-fall-names", "fallNames"], ["sc-fall-style", "fallStyle"]]) {
     $(id).onchange = () => {
       state.view[key] = $(id).value;
       setFallView(true);
@@ -1820,17 +2437,14 @@ function wireControls() {
     }
   };
   $("sc-pt-preset").onchange = () => {
-    // This song's piano (the server keeps it with the song), and the one a
-    // song never heard with Pianoteq starts with.
-    state.view.ptPreset = $("sc-pt-preset").value;
-    writeView();
+    // This song's piano (the server keeps it with the song). A song without
+    // one starts with the default piano, not with this.
     pianoteqRender();
   };
   $("sc-sync").oninput = () => setSync(Number($("sc-sync").value));
   $("sc-sync").ondblclick = () => setSync(0);
   setSync(state.view.syncMs || 0);
-  $("sc-speed").oninput = () => setSpeed(Number($("sc-speed").value));
-  $("sc-speed").ondblclick = () => setSpeed(100);
+  for (const b of document.querySelectorAll("[data-speed]")) b.onclick = () => setSpeed(Number(b.dataset.speed));
   // This song's own speed first (setSpeed keeps it with the song: with the
   // global one here, the song's was written over before the song loaded).
   setSpeed(state.song.speed || state.view.speed || 100);
@@ -1878,15 +2492,18 @@ function wireControls() {
   };
   $("sc-undo").onclick = undo;
   $("sc-redo").onclick = redo;
+  $("sc-undo2").onclick = undo;
+  $("sc-redo2").onclick = redo;
+  $("sc-mini-undo").onclick = undo;
+  $("sc-history-toggle").onclick = () => {
+    $("sc-history").hidden = !$("sc-history").hidden;
+    if (!$("sc-history").hidden) renderHistory();
+  };
+  $("sc-history-close").onclick = () => ($("sc-history").hidden = true);
+  $("sc-history-reset").onclick = resetToOriginal;
   $("sc-add").onclick = () => setAdding(!state.adding);
   $("sc-fall-add").onclick = () => setAdding(!state.adding);
-  $("sc-reset").onclick = async () => {
-    if (!(await confirmDialog("¿Descartar todas las ediciones y volver a la transcripción original?"))) return;
-    state.history = new History();
-    saveState("", "Restaurando…");
-    await apply(await api(`${API}/notes`, { method: "DELETE" }));
-    saveState("ok", "Original restaurado ✓");
-  };
+  $("sc-reset").onclick = resetToOriginal;
   $("sc-clean-toggle").onclick = () => {
     $("sc-clean").hidden = !$("sc-clean").hidden;
     updateDoomed();
@@ -1972,6 +2589,26 @@ function fallNames() {
   return fingers.available && state.view.fallLabel === "finger" ? "none" : state.view.fallNames;
 }
 
+let aheadHintTimer = 0;
+/** «Notas a la vista»: `sec` seconds of the song on the lane (1-20), kept on
+ *  this device. `hint`: said over the lane for a moment (a gesture or a key:
+ *  the slider may be hidden, full screen or «Ocultar paneles»). */
+function setAhead(sec, { hint = false } = {}) {
+  const s = Math.round(clampAhead(sec) * 10) / 10;
+  state.view.fallAhead = s;
+  writeView();
+  $("sc-fall-ahead").value = String(sliderFromAhead(s));
+  $("sc-fall-ahead-val").textContent = aheadLabel(s);
+  fall.setOptions({ lookahead: s });
+  if (state.view.fall) fall.draw(clock.update(player.time, performance.now(), player.playing, player.rate));
+  if (!hint) return;
+  const el = $("sc-fall-hint");
+  el.textContent = `Notas a la vista: ${aheadLabel(s)}`;
+  el.hidden = false;
+  clearTimeout(aheadHintTimer);
+  aheadHintTimer = setTimeout(() => (el.hidden = true), 1200);
+}
+
 function setFallView(on) {
   state.view.fall = on;
   writeView();
@@ -1983,9 +2620,11 @@ function setFallView(on) {
   $("sc-fall-colors").value = state.view.fallColors;
   $("sc-fall-names").value = state.view.fallNames;
   $("sc-fall-style").value = state.view.fallStyle;
-  $("sc-fall-ahead").value = String(state.view.fallAhead || 4);
+  const ahead = clampAhead(state.view.fallAhead);
+  $("sc-fall-ahead").value = String(sliderFromAhead(ahead));
+  $("sc-fall-ahead-val").textContent = aheadLabel(ahead);
   $("sc-fall-legend").hidden = state.view.fallColors !== "hands";
-  fall.setOptions({ keys: state.view.fallKeys, colors: state.view.fallColors, names: fallNames(), style: fallStyle(), lookahead: Number(state.view.fallAhead) || 4 });
+  fall.setOptions({ keys: state.view.fallKeys, colors: state.view.fallColors, names: fallNames(), style: fallStyle(), lookahead: ahead });
   const t = clock.update(player.time, performance.now(), player.playing, player.rate);
   if (on) {
     window.scrollTo({ top: 0 }); // the score may have been scrolled far down

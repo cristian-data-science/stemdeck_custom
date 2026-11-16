@@ -11,6 +11,8 @@ export async function wireSeparation({ $, api, job }) {
   }
   if (!info?.available) return;
   const song = await api(`/api/jobs/${job}`).catch(() => null);
+  // A solo piano imported as such was never separated: nothing to compare.
+  if (song?.separator === "none") return;
   const used = song?.separator === "roformer" ? "roformer" : "demucs";
   const other = used === "roformer" ? "demucs" : "roformer";
   const names = { demucs: "Demucs", roformer: "RoFormer" };

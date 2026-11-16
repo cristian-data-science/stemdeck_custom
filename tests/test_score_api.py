@@ -441,7 +441,7 @@ def fake_pianoteq(monkeypatch, tmp_path):
     exe.write_bytes(b"")
     runs = []
 
-    def run(args, timeout):
+    def run(args, timeout, wanted=None, low=False):
         if "--list-presets" in args:
             return type("R", (), {"stdout": "NY Steinway D Classical\nU4 Small\n", "stderr": ""})
         runs.append(args)
@@ -453,6 +453,12 @@ def fake_pianoteq(monkeypatch, tmp_path):
 
     monkeypatch.setenv("STEMDECK_PIANOTEQ", str(exe))
     monkeypatch.setattr(pianoteq, "_run", run)
+    # Each test's score starts again at version 1 (the server keeps the
+    # latest version it read per score).
+    from app.api import score as api
+
+    api._PT_NOTES.clear()
+    api._PT_WANT.clear()
     pianoteq._presets.cache_clear()
     yield runs
     pianoteq._presets.cache_clear()
@@ -504,6 +510,105 @@ def test_pianoteq_renders_the_score_as_played_and_caches(
     )
     assert _render(client)["key"] != st["key"]
     assert len(fake_pianoteq) == 3
+
+
+def test_a_hand_change_does_not_render_pianoteq_again(client, done_job, stub_engine, fake_pianoteq):
+    # The file splits the notes into a right- and a left-hand track, but
+    # Pianoteq plays the same notes: a new hand model or a hand correction
+    # made every song render again.
+    data = _transcribe(client)
+    st = _render(client)
+    notes = [
+        {k: n[k] for k in ("id", "midi", "start", "end", "velocity", "hand")} for n in data["notes"]
+    ]
+    notes[0]["hand"] = "L" if data["notes"][0]["staff"] == 1 else "R"
+    r = client.put(f"/api/jobs/{JOB}/score/piano/notes", json={"notes": notes})
+    assert r.status_code == 200
+    assert _render(client)["key"] == st["key"]
+    assert len(fake_pianoteq) == 1
+
+
+def test_a_render_named_after_the_hands_is_kept(client, done_job, stub_engine, fake_pianoteq):
+    # Renders made until 2026-11-12 were named after the two-track MIDI: one
+    # still matching is renamed, not rendered again.
+    from app.api.score import _pt_folder
+    from app.score import pianoteq, service, store
+
+    _transcribe(client)
+    job = __import__("app.core.registry", fromlist=["get"]).get(JOB)
+    doc, meta = store.read_notes(JOB, "piano"), store.read_meta(JOB, "piano")
+    midi, sig = service.performance_signature(job, "piano", doc, meta)
+    folder = _pt_folder(JOB, "piano")
+    folder.mkdir(parents=True, exist_ok=True)
+    old = pianoteq.audio_path(folder, pianoteq.render_key(midi, "U4 Small"))
+    old.write_bytes(b"made before")
+    st = _render(client, "U4 Small")
+    assert st["key"] == pianoteq.render_key(sig, "U4 Small") and not fake_pianoteq
+    assert pianoteq.audio_path(folder, st["key"]).read_bytes() == b"made before"
+
+
+def test_hand_corrections_are_kept_for_retraining(client, done_job, stub_engine):
+    from app.score import hand_labels
+
+    data = _transcribe(client)
+    assert data["hand_labels"] == {"corrected": 0, "reviewed": False, "reviewed_notes": 0}
+    notes = [
+        {k: n[k] for k in ("id", "midi", "start", "end", "velocity", "hand")} for n in data["notes"]
+    ]
+    first = data["notes"][0]
+    shown = "R" if first["staff"] == 1 else "L"
+    notes[0]["hand"] = "L" if shown == "R" else "R"
+    notes[1]["midi"] += 1  # not a hand change: not logged
+    url = f"/api/jobs/{JOB}/score/piano/notes"
+    after = client.put(url, json={"notes": notes}).json()
+    assert after["hand_labels"]["corrected"] == 1
+    log = hand_labels.read_log(JOB, "piano")
+    assert len(log) == 1
+    e = log[0]
+    assert (e["id"], e["hand"], e["was"], e["midi"]) == (
+        first["id"],
+        notes[0]["hand"],
+        shown,
+        first["midi"],
+    )
+    # Back to the program: logged too, and no longer a label.
+    notes[0]["hand"] = None
+    assert client.put(url, json={"notes": notes}).json()["hand_labels"]["corrected"] == 0
+    # «Canción revisada»: every note's hand as shown; later corrections follow.
+    rev = client.post(f"/api/jobs/{JOB}/score/piano/hands/reviewed").json()["hand_labels"]
+    assert rev["reviewed"] and rev["reviewed_notes"] == len(notes)
+    snap = hand_labels.reviewed(JOB, "piano")
+    assert {n["hand"] for n in snap["notes"]} <= {"L", "R"}
+    notes[2]["hand"] = "L"
+    client.put(url, json={"notes": notes})
+    snap = hand_labels.reviewed(JOB, "piano")
+    assert next(n for n in snap["notes"] if n["id"] == notes[2]["id"])["hand"] == "L"
+    gone = client.delete(f"/api/jobs/{JOB}/score/piano/hands/reviewed").json()["hand_labels"]
+    assert not gone["reviewed"]
+    # The log outlives «Restaurar original».
+    client.delete(url)
+    assert len(hand_labels.read_log(JOB, "piano")) == 3
+
+
+def test_the_default_piano_is_the_users_bosendorfer_when_installed(monkeypatch, tmp_path):
+    from app.score import pianoteq
+
+    exe = tmp_path / "Pianoteq 9.exe"
+    exe.write_bytes(b"")
+    monkeypatch.setenv("STEMDECK_PIANOTEQ", str(exe))
+    for listed, want in (
+        ("NY Steinway D Classical\nBösendorfer VC Player\n", "Bösendorfer VC Player"),
+        ("U4 Small\nNY Steinway D Classical\n", "NY Steinway D Classical"),
+        ("U4 Small\n", "U4 Small"),
+    ):
+        monkeypatch.setattr(
+            pianoteq,
+            "_run",
+            lambda args, timeout, out=listed: type("R", (), {"stdout": out, "stderr": ""}),
+        )
+        pianoteq._presets.cache_clear()
+        assert pianoteq.info()["default"] == want
+    pianoteq._presets.cache_clear()
 
 
 def test_pianoteq_refuses_unknown_presets_and_absence(client, done_job, stub_engine, monkeypatch):
@@ -675,19 +780,151 @@ def test_every_score_gets_its_pianoteq_audio_without_asking(
     client, done_job, stub_engine, fake_pianoteq, monkeypatch
 ):
     """Rendered as soon as the notes exist, beside the rest (the page opens
-    meanwhile); choosing «Pianoteq» later finds it ready, from the cache."""
+    meanwhile): both hands, then each hand alone. Choosing «Pianoteq» later
+    finds it ready, and so does muting a hand (it used to render then, with
+    the MIDI synth playing meanwhile)."""
     monkeypatch.setenv("STEMDECK_PIANOTEQ_AUTO", "1")
     _transcribe(client)
     from app.score import store
 
     folder = store.score_dir(JOB, "piano") / "pianoteq"
-    for _ in range(250):
-        if list(folder.glob("*.flac")):
+    for _ in range(500):
+        if len(list(folder.glob("*.flac"))) == 12:
             break
         time.sleep(0.02)
-    assert len(list(folder.glob("*.flac"))) == 1 and len(fake_pianoteq) == 1
+    # Four speeds x (both hands, right, left).
+    assert len(list(folder.glob("*.flac"))) == 12 and len(fake_pianoteq) == 12
     st = _render(client)
-    assert st["state"] == "ready" and len(fake_pianoteq) == 1  # no second render
+    assert st["state"] == "ready" and len(fake_pianoteq) == 12  # no other render
+    for speed in (1.0, 0.7, 0.5, 0.25):
+        for hand in (None, "R", "L"):
+            r = client.post(
+                f"/api/jobs/{JOB}/score/piano/pianoteq",
+                json={"preset": "NY Steinway D Classical", "hand": hand, "speed": speed},
+            )
+            assert r.json()["state"] == "ready", (hand, speed)
+    assert len(fake_pianoteq) == 12
+    ready = client.get(f"/api/jobs/{JOB}/score/piano/pianoteq/ready").json()
+    assert len(ready["variants"]) == 12 and "25:L" in ready["variants"]
+
+
+def test_a_render_of_notes_edited_again_is_skipped(tmp_path, monkeypatch):
+    """Renders run one at a time (~30 s a song): one no longer wanted when its
+    turn comes is skipped, and one running is stopped. The render the page
+    waited for came minutes late, behind renders of older notes."""
+    from app.score import pianoteq
+
+    exe = tmp_path / "Pianoteq 9.exe"
+    exe.write_bytes(b"")
+    monkeypatch.setenv("STEMDECK_PIANOTEQ", str(exe))
+    ran = []
+    monkeypatch.setattr(
+        pianoteq, "_run", lambda args, timeout, wanted=None, low=False: ran.append(args)
+    )
+    with pytest.raises(pianoteq.Superseded):
+        pianoteq.render_as(b"MThd", "U4 Small", tmp_path / "pt", "a" * 20, wanted=lambda: False)
+    assert ran == [] and not list((tmp_path / "pt").glob("*.flac"))
+
+
+def test_a_running_render_is_stopped_when_no_longer_wanted():
+    import subprocess
+    import sys
+
+    from app.score import pianoteq
+
+    asked = []
+
+    def wanted():
+        asked.append(1)
+        return len(asked) < 2
+
+    started = time.monotonic()
+    with pytest.raises(pianoteq.Superseded):
+        pianoteq._run_stoppable([sys.executable, "-c", "import time; time.sleep(30)"], 60, wanted)
+    assert time.monotonic() - started < 10
+    # And a run that finishes returns as before.
+    done = pianoteq._run_stoppable([sys.executable, "-c", "print('ok')"], 60, lambda: True)
+    assert isinstance(done, subprocess.CompletedProcess) and done.stdout.strip() == "ok"
+
+
+def test_background_renders_wait_for_the_one_the_page_asked_for(monkeypatch):
+    from app.api import score as api
+
+    monkeypatch.setenv("STEMDECK_PIANOTEQ_AUTO", "1")
+    ran = []
+    monkeypatch.setattr(api, "_pt_background_one", lambda *task: ran.append(task) or "done")
+    monkeypatch.setattr(api, "_PT_HIGH", 1)
+    api._pt_background("abcdefabcd01", "piano", front=True)
+    time.sleep(0.8)
+    assert ran == []  # the page's render goes first
+    monkeypatch.setattr(api, "_PT_HIGH", 0)
+    for _ in range(100):
+        if len(ran) == 12:
+            break
+        time.sleep(0.05)
+    # By speed (100, 70, 50, 25 %), each: both hands, right, left.
+    assert ran == [
+        ("abcdefabcd01", "piano", h, s) for s in (1.0, 0.7, 0.5, 0.25) for h in (None, "R", "L")
+    ]
+
+
+def test_the_startup_sweep_queues_every_score(
+    client, done_job, stub_engine, fake_pianoteq, monkeypatch
+):
+    """The whole library: every song at 100 % first (both hands, right, left;
+    the most recently worked on first), then every song at 70 %, 50 %, 25 %
+    -- not one song's slow renders before the next song has any."""
+    from app.api import score as api
+    from app.core.registry import _jobs
+    from app.score import store
+
+    _transcribe(client)
+    other = "abcdefabcd02"
+    _jobs[other] = _jobs[JOB].__class__(id=other, status="done")
+    d = store.score_dir(other, "piano")
+    d.mkdir(parents=True)
+    (d / "raw.json").write_text("{}")
+    queued = []
+    monkeypatch.setattr(api, "_pt_queue", lambda tasks, front=False: queued.extend(tasks))
+    monkeypatch.setenv("STEMDECK_PIANOTEQ_AUTO", "1")
+    try:
+        assert api.pianoteq_sweep() == 2
+    finally:
+        _jobs.pop(other, None)
+    assert len(queued) == 24
+    assert [t[3] for t in queued[:6]] == [1.0] * 6 and {t[0] for t in queued[:6]} == {JOB, other}
+    assert [t[2] for t in queued[:3]] == [None, "R", "L"]
+    assert [t[3] for t in queued[-6:]] == [0.25] * 6
+    monkeypatch.setenv("STEMDECK_PIANOTEQ_AUTO", "0")
+    assert api.pianoteq_sweep() == 0
+
+
+def test_background_renders_run_below_normal_priority(monkeypatch):
+    import sys
+
+    from app.score import pianoteq
+
+    seen = {}
+
+    class P:
+        returncode = 0
+
+        def __init__(self, args, **kw):
+            seen.clear()
+            seen.update(kw)
+
+        def communicate(self, timeout=None):
+            return "", ""
+
+    monkeypatch.setattr(pianoteq.subprocess, "Popen", P)
+    pianoteq._run_stoppable(["x"], 10, lambda: True, low=True)
+    if sys.platform == "win32":
+        assert seen["creationflags"] & pianoteq.subprocess.BELOW_NORMAL_PRIORITY_CLASS
+    else:
+        assert seen["preexec_fn"] is pianoteq._nice
+    pianoteq._run_stoppable(["x"], 10, lambda: True)
+    if sys.platform == "win32":
+        assert not seen["creationflags"] & pianoteq.subprocess.BELOW_NORMAL_PRIORITY_CLASS
 
 
 # -- Pianoteq per song, practice renders, practice, library ------------------
@@ -724,7 +961,7 @@ def test_each_score_keeps_its_own_piano_and_lists_the_ready_ones(
     data = _transcribe(client)
     assert data["pianoteq"] == {"preset": None}
     ready = client.get(f"/api/jobs/{JOB}/score/piano/pianoteq/ready").json()
-    assert ready == {"preset": None, "ready": []}
+    assert ready["preset"] is None and ready["ready"] == [] and ready["variants"] == []
     _render(client, "U4 Small")
     assert client.get(f"/api/jobs/{JOB}/score/piano").json()["pianoteq"]["preset"] == "U4 Small"
     _render(client)
@@ -867,3 +1104,187 @@ def test_a_song_with_a_piano_gets_its_score_after_the_separation(
     assert started == [(JOB, "piano", "auto")]
     assert client.get(f"/api/jobs/{JOB}/score/piano").json()["status"]["state"] == "queued"
     api._RUNS.clear()
+
+
+# -- the edit history («🕘 Historial»): kept on the server ---------------------
+
+
+def _plain(notes):
+    return [{k: n[k] for k in ("id", "midi", "start", "end", "velocity", "hand")} for n in notes]
+
+
+def _put(client, notes, what=None):
+    r = client.put(f"/api/jobs/{JOB}/score/piano/notes", json={"notes": notes, "what": what})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_each_edit_is_kept_in_the_history_named_and_can_be_gone_back_on(
+    client, done_job, stub_engine
+):
+    """A move made by mistake did not show in «Borradas» (only deleted notes
+    do), and the page's own undo is lost on a reload. The server keeps every
+    saved edit, with the notes it changed as they were and as they are."""
+    data = _transcribe(client)
+    original = _plain(data["notes"])
+    moved = [dict(n) for n in original]
+    moved[0]["start"] += 0.5
+    moved[0]["end"] += 0.5
+    v_move = _put(client, moved, "Movida")["version"]
+    gone = moved[1:]
+    v_del = _put(client, gone, "1 nota(s) borrada(s)")["version"]
+    h = client.get(f"/api/jobs/{JOB}/score/piano/history").json()
+    assert [e["what"] for e in h["entries"]] == ["1 nota(s) borrada(s)", "Movida"]
+    assert h["entries"][0]["v"] == v_del and h["entries"][0]["before"] == 1
+    move = h["entries"][1]
+    assert move["v"] == v_move and move["before"] == 1 and move["after"] == 1
+    assert move["notes"][0]["from"]["start"] + 0.5 == pytest.approx(move["notes"][0]["to"]["start"])
+    # Back to before the move: the move and the later delete undone, saved as
+    # one more edit (itself in the history: it can be gone back on in turn).
+    r = client.post(f"/api/jobs/{JOB}/score/piano/history/{v_move}/undo")
+    assert r.status_code == 200
+    back = {n["id"]: n for n in r.json()["notes"]}
+    assert len(back) == len(original)
+    assert all(back[n["id"]]["start"] == pytest.approx(n["start"]) for n in original)
+    h = client.get(f"/api/jobs/{JOB}/score/piano/history").json()
+    assert h["entries"][0]["what"] == "Volver a antes de «Movida»"
+    r = client.post(f"/api/jobs/{JOB}/score/piano/history/{h['entries'][0]['v']}/undo")
+    assert len(r.json()["notes"]) == len(gone)
+    # An unknown version: said, nothing changes.
+    assert client.post(f"/api/jobs/{JOB}/score/piano/history/9999/undo").status_code == 404
+
+
+def test_back_to_the_original_is_in_the_history_too(client, done_job, stub_engine):
+    data = _transcribe(client)
+    edited = _plain(data["notes"])[2:]
+    _put(client, edited, "2 nota(s) borrada(s)")
+    r = client.delete(f"/api/jobs/{JOB}/score/piano/notes")
+    assert len(r.json()["notes"]) == len(data["notes"])
+    h = client.get(f"/api/jobs/{JOB}/score/piano/history").json()
+    assert h["entries"][0]["what"] == "Restaurar original (sin ediciones)"
+    # Undoable: the edits are back.
+    r = client.post(f"/api/jobs/{JOB}/score/piano/history/{h['entries'][0]['v']}/undo")
+    assert {n["id"] for n in r.json()["notes"]} == {n["id"] for n in edited}
+
+
+def test_a_save_that_changes_nothing_adds_no_entry_and_a_new_transcription_clears_it(
+    client, done_job, stub_engine
+):
+    data = _transcribe(client)
+    notes = _plain(data["notes"])
+    _put(client, notes, "Nada")
+    assert client.get(f"/api/jobs/{JOB}/score/piano/history").json()["entries"] == []
+    _put(client, notes[1:], "Borrada")
+    assert len(client.get(f"/api/jobs/{JOB}/score/piano/history").json()["entries"]) == 1
+    client.post(f"/api/jobs/{JOB}/score/piano?force=true")
+    for _ in range(100):
+        if client.get(f"/api/jobs/{JOB}/score/piano").json()["status"]["state"] == "done":
+            break
+        time.sleep(0.05)
+    assert client.get(f"/api/jobs/{JOB}/score/piano/history").json()["entries"] == []
+
+
+def test_the_history_keeps_its_last_entries(client, done_job, stub_engine, monkeypatch):
+    from app.score import store
+
+    monkeypatch.setattr(store, "HISTORY_KEEP", 3)
+    data = _transcribe(client)
+    notes = _plain(data["notes"])
+    for i in range(5):
+        notes[0]["velocity"] = 60 + i
+        _put(client, notes, f"Edición {i}")
+    whats = [
+        e["what"] for e in client.get(f"/api/jobs/{JOB}/score/piano/history").json()["entries"]
+    ]
+    assert whats == ["Edición 4", "Edición 3", "Edición 2"]
+
+
+# -- Settings › Storage: sizes by kind, cleaning, what is made in the background
+
+
+def _wait_flacs(folder, n):
+    for _ in range(500):
+        if len(list(folder.glob("*.flac"))) == n:
+            return
+        time.sleep(0.02)
+    raise AssertionError(f"{len(list(folder.glob('*.flac')))} renders, not {n}")
+
+
+def _row(client):
+    data = client.get("/api/storage").json()
+    return data, next(r for r in data["jobs"] if r["id"] == JOB)
+
+
+def test_storage_tells_the_renders_apart_and_cleans_them_by_kind(
+    client, done_job, stub_engine, fake_pianoteq, monkeypatch
+):
+    from app.score import store
+
+    monkeypatch.setenv("STEMDECK_PIANOTEQ_AUTO", "1")
+    _transcribe(client)
+    folder = store.score_dir(JOB, "piano") / "pianoteq"
+    _wait_flacs(folder, 12)
+    monkeypatch.setenv("STEMDECK_PIANOTEQ_AUTO", "0")  # nothing made again behind
+    data, row = _row(client)
+    size = {p.name: p.stat().st_size for p in folder.glob("*.flac")}
+    parts = row["parts"]
+    assert parts["pt_main"] > 0 and parts["pt_hands"] > 0 and parts["pt_slow"] > 0
+    assert parts["pt_old"] == 0
+    assert parts["pt_main"] + parts["pt_hands"] + parts["pt_slow"] == sum(size.values())
+    assert parts["stems"] > 0 and row["total"] == sum(parts.values())
+    assert data["path"] and data["disk"]["free"] > 0 and data["background"] == "all"
+    # Without the index (renders made before it), the same answer.
+    (folder / "index.json").unlink()
+    assert _row(client)[1]["parts"] == parts
+
+    r = client.post("/api/storage/clean", json={"what": "slow", "jobs": [JOB]}).json()
+    assert r["files"] == 9 and len(list(folder.glob("*.flac"))) == 3
+    r = client.post("/api/storage/clean", json={"what": "hands"}).json()
+    assert r["files"] == 2
+    main = _row(client)[1]["parts"]
+    assert main["pt_slow"] == main["pt_hands"] == 0 and main["pt_main"] > 0
+    # An edit: the render left is of notes that are gone, "old".
+    notes = _plain(client.get(f"/api/jobs/{JOB}/score/piano").json()["notes"])
+    _put(client, notes[1:], "Borrada")
+    old = _row(client)[1]["parts"]
+    assert old["pt_main"] == 0 and old["pt_old"] == main["pt_main"]
+    r = client.post("/api/storage/clean", json={"what": "old"}).json()
+    assert r["files"] == 1 and r["bytes"] == main["pt_main"]
+    assert not list(folder.glob("*.flac"))
+    # The stems and the score are never touched.
+    assert _row(client)[1]["parts"]["stems"] == parts["stems"]
+    assert client.get(f"/api/jobs/{JOB}/score/piano").json()["status"]["state"] == "done"
+    assert client.post("/api/storage/clean", json={"what": "everything"}).status_code == 422
+
+
+def test_what_is_made_in_the_background_follows_the_setting(client, monkeypatch):
+    from app.api import score as api
+
+    monkeypatch.setattr(api, "pianoteq_sweep", lambda: 0)
+    assert len(api._pt_variants("j", "piano")) == 12
+    for value, n in (("hands", 3), ("main", 1), ("off", 0), ("all", 12)):
+        r = client.put("/api/storage/background", json={"value": value})
+        assert r.status_code == 200 and r.json() == {"background": value}
+        assert len(api._pt_variants("j", "piano")) == n, value
+    assert api._pt_variants("j", "piano")[:3] == [
+        ("j", "piano", None, 1.0),
+        ("j", "piano", "R", 1.0),
+        ("j", "piano", "L", 1.0),
+    ]
+    assert client.put("/api/storage/background", json={"value": "x"}).status_code == 422
+
+
+def test_storage_cleans_the_score_pages_copies_and_they_come_back(
+    client, done_job, stub_engine, jobs_dir
+):
+    _transcribe(client)
+    score = jobs_dir / JOB / "score"
+    (score / "full_mix.wav").write_bytes(b"x" * 1000)
+    (score / "audio").mkdir(exist_ok=True)
+    (score / "audio" / "piano.flac").write_bytes(b"y" * 500)
+    _, row = _row(client)
+    assert row["parts"]["cache"] == 1500
+    r = client.post("/api/storage/clean", json={"what": "cache", "jobs": [JOB]}).json()
+    assert r == {"files": 2, "bytes": 1500}
+    assert not (score / "full_mix.wav").exists() and not (score / "audio").exists()
+    assert (score / "piano" / "raw.json").is_file()  # the score itself stays

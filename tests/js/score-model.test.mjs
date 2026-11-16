@@ -247,6 +247,17 @@ check("move carries draw_end", moveNotes([held], ["h"], 1)[0].draw_end === 1.125
   check("a repeated key reads as two bars, with a gap", Math.abs(barEnd(rep1, nx.get("p")) - 0.44) < 1e-9 && !fallingBars([rep1, rep2], 0.47, nx).find((b) => b.note.id === "p"));
   check("a very short note still shows", barEnd(note("s", 60, 1, 1.001, { draw_end: 1.001 })) === 1.05);
   check("one colour by default, by hand on request", barColor({ staff: 2 }).bar === barColor({ staff: 1 }).bar && barColor({ staff: 2 }, "hands").bar !== barColor({ staff: 1 }, "hands").bar);
+  const { paletteFrom, handOf, HAND_COLORS } = await import("../../static/js/score/fall.js");
+  check("a hand the user set shows before the server re-engraves", handOf({ staff: 2, hand: "R" }) === "R" && handOf({ staff: 1, hand: "L" }) === "L" && handOf({ staff: 2, hand: null }) === "L");
+  check("hand colour follows the user's hand, not the old staff", barColor({ staff: 2, hand: "R" }, "hands").bar === HAND_COLORS.R);
+  const pal = paletteFrom("#ff0000");
+  check("own colours: a palette from one colour", pal.bar === "#ff0000" && pal.glow === "255,0,0" && pal.hi !== pal.bar && pal.lo !== pal.bar && paletteFrom("nope") === null);
+  check("own colours: dark text on a light colour, white on a dark one", paletteFrom("#ffff80").text === "#111111" && paletteFrom("#202060").text === "#ffffff");
+  const custom = { R: paletteFrom("#ff0000"), L: paletteFrom("#0000ff") };
+  check("own colours are used for each hand", barColor({ staff: 1 }, "hands", custom).bar === "#ff0000" && barColor({ staff: 2 }, "hands", custom).bar === "#0000ff");
+  const paint = { hand: "L", ids: new Set(["p1"]) };
+  check("a note being painted shows the brush's hand", barColor({ id: "p1", staff: 1 }, "hands", null, paint).bar === HAND_COLORS.L && barColor({ id: "p2", staff: 1 }, "hands", null, paint).bar === HAND_COLORS.R);
+  check("painting «Auto» shows the engraved staff, not the user's hand", barColor({ id: "p1", staff: 1, hand: "L" }, "hands", null, { hand: null, ids: new Set(["p1"]) }).bar === HAND_COLORS.R);
 }
 
 // ── dragging a note up/down the staff moves it along the key's scale ──
@@ -324,7 +335,11 @@ check("deleted-note names", midiName(70, { flats: true }) === "Si♭4" && midiNa
   check("loop over bars in either order", L.a === 2 && L.b === 5.5 && L.from === 2 && L.to === 3);
   check("loop over the selection's bars", JSON.stringify(P.loopOverNotes(M, [{ start: 4.2 }, { start: 0.5 }])) === JSON.stringify(P.loopOver(M, 0, 2)));
   check("loop: back to A only past B, and only when on", P.loopJump({ ...L, on: true }, 5.6) === 2 && P.loopJump({ ...L, on: true }, 5) === null && P.loopJump({ ...L, on: false }, 6) === null);
-  check("speed ramp: up by the step, never past 100", P.rampSpeed(60, 5) === 65 && P.rampSpeed(98, 5) === 100 && P.rampSpeed(100, 5) === 100 && P.rampSpeed(70, 0) === 70);
+  check("speeds: only 25, 50, 70 and 100 %", P.SPEEDS.join() === "25,50,70,100");
+  check("speeds: a speed saved before is snapped to the nearest", P.snapSpeed(85) === 70 || P.snapSpeed(85) === 100);
+  check("speeds: snapped", P.snapSpeed(40) === 50 && P.snapSpeed(60) === 50 && P.snapSpeed(65) === 70 && P.snapSpeed(125) === 100 && P.snapSpeed(10) === 25 && P.snapSpeed("x") === 100);
+  check("speed ramp: one step up every N loops, never past 100", P.rampSpeed(25, 1, 1) === 50 && P.rampSpeed(50, 1, 2) === 70 && P.rampSpeed(70, 1, 3) === 100 && P.rampSpeed(100, 1, 4) === 100);
+  check("speed ramp: every 2 loops; 0 keeps the speed", P.rampSpeed(50, 2, 1) === 50 && P.rampSpeed(50, 2, 2) === 70 && P.rampSpeed(70, 0, 5) === 70);
   const beats = P.beatsOf(M);
   check("beats: 4 + 4 + 3, the first of each bar accented", beats.length === 11 && beats.filter((b) => b.down).length === 3 && Math.abs(beats[9].t - 4.5) < 1e-9);
   check("seconds of a beat where the song is", P.beatSecondsAt(M, 1) === 0.5 && P.beatSecondsAt(M, 4.5) === 0.5 && P.beatSecondsAt([], 1) === 0.5);
@@ -355,6 +370,30 @@ check("deleted-note names", midiName(70, { flats: true }) === "Si♭4" && midiNa
   const { videoKeyHeight } = await import("../../static/js/score/fall.js");
   check("video: 88 keys on 1080p, a key 5.5 times as long as wide (19 % of the screen)", videoKeyHeight(1920, 1080, 52) === Math.round((1920 / 52) * 5.5));
   check("video: the keyboard stays between 12 % and 22 % of the screen", videoKeyHeight(1920, 1080, 15) === Math.round(1080 * 0.22) && videoKeyHeight(800, 1080, 52) === Math.round(1080 * 0.12));
+}
+// ── undo / redo name what they act on (the buttons, the saved history) ──
+{
+  const h = new History();
+  h.push(["a"], "Movida");
+  h.push(["b"], "Borrada");
+  check("history: undo is named after the last edit", h.undoLabel === "Borrada" && !h.redoLabel);
+  const back = h.undo(["c"]);
+  check("history: undo returns the state before it and names it", back.join() === "b" && h.label === "Borrada" && h.redoLabel === "Borrada" && h.undoLabel === "Movida");
+  const fwd = h.redo(back);
+  check("history: redo the same", fwd.join() === "c" && h.label === "Borrada" && h.undoLabel === "Borrada");
+  h.undo(fwd);
+  h.push(["d"], "Nota añadida");
+  check("history: a new edit clears what could be redone, names and all", !h.canRedo && !h.redoLabel && h.undoLabel === "Nota añadida");
+}
+// ── «Notas a la vista»: the slider's log scale, 1-20 s ──
+{
+  const { clampAhead, sliderFromAhead, aheadFromSlider, aheadLabel, AHEAD_MIN, AHEAD_MAX } = await import("../../static/js/score/fall.js");
+  check("notas a la vista: the slider's ends are 1 s and 20 s", aheadFromSlider(0) === AHEAD_MIN && aheadFromSlider(100) === AHEAD_MAX);
+  check("notas a la vista: 4 s (the default) goes to the slider and back", Math.abs(aheadFromSlider(sliderFromAhead(4)) - 4) <= 0.15);
+  check("notas a la vista: every second from 1 to 20 survives the round trip within 4 %", [1, 2, 3, 5, 8, 12, 20].every((v) => Math.abs(aheadFromSlider(sliderFromAhead(v)) - v) / v < 0.04));
+  check("notas a la vista: a log scale (1→2 s as wide as 10→20 s)", Math.abs((sliderFromAhead(2) - sliderFromAhead(1)) - (sliderFromAhead(20) - sliderFromAhead(10))) <= 1);
+  check("notas a la vista: out of range or nonsense is kept in it", clampAhead(0.2) === 1 && clampAhead(99) === 20 && clampAhead("x") === 4 && clampAhead(undefined) === 4);
+  check("notas a la vista: labelled as read", aheadLabel(4) === "4 s" && aheadLabel(2.5) === "2,5 s" && aheadLabel(12.4) === "12 s");
 }
 // ── edits sound where they now are (before the server answers) ──
 {

@@ -195,6 +195,18 @@ async def _desktop_parent_watchdog(parent_pid: int) -> None:
         await asyncio.sleep(1)
 
 
+async def _pianoteq_sweep_later(delay: float = 15.0) -> None:
+    await asyncio.sleep(delay)
+    try:
+        from app.api.score import pianoteq_sweep
+
+        queued = await asyncio.to_thread(pianoteq_sweep)
+        if queued:
+            _log.info("pianoteq: %d score(s) checked in the background", queued)
+    except Exception:
+        _log.exception("pianoteq background sweep failed")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _background_tasks = set()
@@ -221,6 +233,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await asyncio.to_thread(sweep_orphaned_section_workspaces, JOBS_DIR)
     except Exception:
         _log.exception("could not sweep orphaned section workspaces")
+
+    # Every score's Pianoteq audio -- both hands, the right hand alone, the
+    # left hand alone -- made in the background (app/api/score.py), a little
+    # after startup. Renders the score page asks for go first.
+    pt = asyncio.create_task(_pianoteq_sweep_later())
+    _background_tasks.add(pt)
+    pt.add_done_callback(_background_tasks.discard)
 
     resumed = take_pending_resume()
     if resumed:

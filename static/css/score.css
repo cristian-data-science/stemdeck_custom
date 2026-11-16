@@ -172,8 +172,37 @@ kbd {
   border-radius: 10px; overflow: hidden; background: #101014; touch-action: manipulation; }
 .sc-fall-canvas { display: block; }
 .sc-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin: 0 4px 0 10px; }
-.sc-swatch-r { background: #4f9dff; }
-.sc-swatch-l { background: #3ecf8e; }
+.sc-swatch-r { background: var(--hand-r, #4f9dff); }
+.sc-swatch-l { background: var(--hand-l, #3ecf8e); }
+/* Hands: colours of the falling notes, «Corregir manos», the edit bar's hand */
+.sc-hand-color { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; cursor: pointer; }
+.sc-hand-color input[type=color] { width: 22px; height: 22px; padding: 0; border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 4px; background: none; cursor: pointer; }
+.sc-hand-color input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+.sc-hand-color input[type=color]::-webkit-color-swatch { border: none; border-radius: 3px; }
+.sc-paint-pick { display: inline-flex; align-items: center; gap: 4px; }
+.sc-paint-pick[hidden] { display: none; }
+.sc-paint-btn .sc-swatch, .sc-editbar-hands .sc-swatch { margin: 0 5px 0 0; }
+.sc-paint-btn[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 600; }
+.sc-painting #sc-fall { cursor: crosshair; }
+.sc-hands-msg:empty { display: none; }
+/* Messages that come and go (a hand correction saved, Pianoteq rendering)
+   float over the page, bottom right: in their bar they wrapped it onto a
+   second line for a few seconds, the page got a scrollbar, the piano view
+   lost its width to it and was redrawn smaller -- then back when the message
+   went. Floating, they move nothing. */
+.sc-hands-msg, .sc-pt-status {
+  position: fixed; right: 16px; bottom: 14px; z-index: 40; pointer-events: none;
+  max-width: min(70vw, 720px); padding: 6px 12px; border-radius: 8px;
+  background: rgba(14, 20, 28, 0.92); border: 1px solid var(--border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35); color: var(--fg); font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sc-pt-status[hidden] { display: none; }
+/* Both at once: the hand message above Pianoteq's. */
+body:has(.sc-pt-status:not([hidden])) .sc-hands-msg { bottom: 52px; }
+.sc-editbar-hands { display: inline-flex; align-items: center; gap: 4px; }
+.sc-editbar-hands .sc-btn { min-height: 34px; }
 /* In the piano view the score and its editing tools step aside. */
 .sc-fall-mode .sc-tools, .sc-fall-mode #sc-scroll, .sc-fall-mode #sc-status,
 .sc-fall-mode #sc-clean, .sc-fall-mode #sc-help, .sc-fall-mode #sc-calib-check,
@@ -245,9 +274,93 @@ kbd {
 .sc-mini-text b { color: var(--fg); }
 .sc-bare .sc-top, .sc-bare .sc-transport, .sc-bare #sc-practice-bar, .sc-bare #sc-fall-bar, .sc-bare .sc-tools,
 .sc-bare #sc-status, .sc-bare #sc-diag, .sc-bare #sc-help, .sc-bare #sc-clean, .sc-bare #sc-calib-check,
-.sc-bare #sc-trash, .sc-bare #sc-editbar, .sc-bare #sc-pt-status { display: none !important; }
+/* The Pianoteq status floats and comes and goes: shown here too (a note
+   being taken out of Pianoteq is said while practising full screen). */
+.sc-bare #sc-trash, .sc-bare #sc-editbar { display: none !important; }
 .sc-bare .sc-main { padding-top: 34px; }
 .sc-bare.sc-fall-mode .sc-main { padding-top: 0; }
 .sc-bare .sc-fall { margin: 0; border-radius: 0; }
 /* Full screen: the piano edge to edge */
 .sc-fs .sc-fall { margin: 0; border-radius: 0; }
+/* «Silenciar»: the silenced hand's button stays lit and pulses, 🔇 in it */
+.sc-mute-btn[aria-pressed="true"] { background: #e5484d; border-color: #e5484d; color: #fff; font-weight: 600;
+  animation: sc-mute-pulse 1.6s ease-in-out infinite; }
+.sc-mute-btn[aria-pressed="true"] .sc-mute-icon { display: inline-block; animation: sc-mute-wiggle 1.6s ease-in-out infinite; }
+@keyframes sc-mute-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(229, 72, 77, 0.55); }
+  50% { box-shadow: 0 0 0 5px rgba(229, 72, 77, 0); }
+}
+@keyframes sc-mute-wiggle {
+  0%, 70%, 100% { transform: rotate(0); }
+  80% { transform: rotate(-12deg); }
+  90% { transform: rotate(12deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sc-mute-btn[aria-pressed="true"], .sc-mute-btn[aria-pressed="true"] .sc-mute-icon { animation: none; }
+}
+
+/* «Notas a la vista»: the slider, and the hint over the lane while it changes
+   (Ctrl + wheel, a pinch, + / −). */
+.sc-fall-ahead input[type=range] { width: 110px; }
+.sc-fall-ahead output { min-width: 3.2em; font-variant-numeric: tabular-nums; }
+.sc-fall-hint {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 3;
+  pointer-events: none; padding: 6px 14px; border-radius: 8px; font-size: 14px; font-weight: 600;
+  background: rgba(14, 20, 28, 0.88); border: 1px solid var(--border); color: var(--fg);
+  white-space: nowrap;
+}
+
+/* «🕘 Historial»: the saved edits, newest first. */
+.sc-history .sc-danger { margin-left: auto; }
+.sc-history-list-what { font-weight: 600; }
+.sc-history li.sc-history-undone { opacity: 0.55; }
+/* «↶ Deshecho: Movida»: says what an undo did, over the page (a tap with two
+   fingers has no button to look at). */
+.sc-toast {
+  position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); z-index: 45;
+  pointer-events: none; padding: 8px 16px; border-radius: 10px; font-size: 15px; font-weight: 600;
+  background: rgba(14, 20, 28, 0.94); border: 1px solid var(--border); color: var(--fg);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4); white-space: nowrap; max-width: 90vw;
+  overflow: hidden; text-overflow: ellipsis;
+}
+/* ↶ ↷ on the playback bar: a finger's size (a tablet has no Ctrl+Z). */
+.sc-undo-btn { min-width: 42px; min-height: 36px; font-size: 19px; line-height: 1; padding: 0 8px; }
+.sc-undo-btn:disabled { opacity: 0.35; }
+
+/* «Velocidad»: four fixed speeds; ✓ when Pianoteq has it for both hands and
+   each hand alone (rendered beforehand, in the background). */
+.sc-speed-pick { display: inline-flex; align-items: center; gap: 4px; }
+.sc-speed-pick [data-speed][aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 700; }
+.sc-speed-pick [data-speed].sc-pt-ready::after { content: " ✓"; color: #3ecf8e; font-weight: 700; }
+
+/* «⚙» quick menu: only with the panels hidden or full screen. Half
+   see-through while nothing happens; lit while the page is touched (or the
+   menu is open); the menu opens downwards, one item under the other. */
+.sc-qm { display: none; position: fixed; top: 10px; right: 10px; z-index: 50;
+  flex-direction: column; align-items: flex-end; gap: 6px; }
+.sc-bare .sc-qm, .sc-fs .sc-qm { display: flex; }
+.sc-bare .sc-qm { top: 46px; } /* below the one-line bar */
+.sc-qm-gear { width: 46px; height: 46px; border-radius: 50%; font-size: 24px; line-height: 1; cursor: pointer;
+  border: 1px solid var(--border); background: rgba(14, 20, 28, 0.6); color: var(--fg-2);
+  opacity: 0.35; transition: opacity 0.4s, background 0.4s, color 0.4s, transform 0.3s; }
+.sc-qm-awake .sc-qm-gear, .sc-qm-gear[aria-expanded="true"] {
+  opacity: 1; background: var(--accent); color: #111; border-color: var(--accent); }
+.sc-qm-gear[aria-expanded="true"] { transform: rotate(60deg); }
+.sc-qm-menu { display: flex; flex-direction: column; gap: 6px; min-width: 210px; max-height: calc(100vh - 120px);
+  overflow-y: auto; padding: 8px; border-radius: 12px; background: rgba(14, 20, 28, 0.94);
+  border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); }
+.sc-qm-menu[hidden] { display: none; }
+.sc-qm-item, .sc-qm-chip { min-height: 40px; border-radius: 8px; border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04); color: var(--fg); font: inherit; font-size: 14px; cursor: pointer; }
+.sc-qm-item { text-align: left; padding: 0 12px; }
+.sc-qm-item[hidden] { display: none; }
+.sc-qm-chip { flex: 1; padding: 0 8px; }
+.sc-qm-item[aria-pressed="true"], .sc-qm-chip[aria-pressed="true"] {
+  border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); font-weight: 700; }
+.sc-qm-chip[data-qm-mute][aria-pressed="true"] { background: #e5484d; border-color: #e5484d; color: #fff; box-shadow: none; }
+.sc-qm-chip.sc-pt-ready::after { content: " ✓"; color: #3ecf8e; }
+.sc-qm-group { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.sc-qm-row { display: flex; gap: 4px; align-items: center; }
+.sc-qm-row output { min-width: 3.4em; text-align: center; color: var(--fg); font-variant-numeric: tabular-nums; }
+/* «✏️ Editar notas» from the menu: the edit bar shows even with the panels hidden. */
+.sc-bare.sc-qm-edit #sc-editbar:not([hidden]) { display: flex !important; }

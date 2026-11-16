@@ -92,16 +92,29 @@ compartas y, si lo prefieres, usa una cuenta secundaria. Cuando caduque, vuelve 
 - Opciones del piano (se guardan en este navegador): **Teclado** «Rango de la canción» (de la
   octava más grave a la más aguda que usa la pieza, completas) o «88 teclas»; cada do lleva su
   octava (C4 es el do central). **Colores** «Un color» (por defecto) o «Por mano», con la mano
-  de cada nota como en la partitura. **Nombres** «C D E» (por defecto), «do re mi» o sin nombres.
+  de cada nota como en la partitura; con «Por mano», clic en el cuadrado de color de «mano
+  derecha» o «mano izquierda» para elegir otro (↺ vuelve a los de siempre). **Nombres** «C D E»
+  (por defecto), «do re mi» o sin nombres.
+- **🖌 Corregir manos** (vista piano): elige **Derecha**, **Izquierda** o **Auto** y toca o
+  arrastra sobre las notas que caen; se pintan al momento y se guardan al soltar (también
+  mientras suena: en este modo arrastrar no mueve la canción). Un punto blanco marca las notas
+  cuya mano pusiste tú. **Auto** quita tu corrección y la mano vuelve a decidirla el programa.
+  Esc o el mismo botón para terminar. En la partitura (o con notas elegidas en el piano), la
+  barra flotante tiene **Mano: Derecha / Izquierda / Auto**, y **H** sigue cambiando de mano.
 - **−30 −10 −5 +5 +10 +30**: saltos rápidos en segundos, en las dos vistas.
 - **Cambiar «Escuchar» no vuelve al principio**: stem, MIDI, Stem + MIDI, canción completa y
   Pianoteq siguen en el mismo segundo de la canción. Antes, al llegar el audio de Pianoteq (y al
   cambiar dos veces antes de que cargara el primero, fácil por Wi-Fi) volvía a 0:00.
-- **Lo borrado no suena.** El MIDI de la página toma cada edición al instante, sin esperar a que
-  el servidor la guarde. El audio de Pianoteq es un archivo ya generado: mientras se genera de
-  nuevo con la edición, suena el MIDI con la edición aplicada (lo dice el estado de Pianoteq) y
-  vuelve a Pianoteq en el mismo punto cuando está listo. Con «Stem» o «Canción completa» la nota
-  sigue sonando porque es la grabación original.
+- **Lo borrado no suena en el MIDI.** El MIDI de la página toma cada edición al instante, sin
+  esperar a que el servidor la guarde. El audio de Pianoteq es un archivo ya generado:
+  - **Al borrar notas** escuchando Pianoteq, en cualquier vista, **sigue sonando la pista
+    actual** (la nota borrada se oye unos segundos más, sin perder el ritmo de las siguientes) y
+    un aviso flotante abajo a la derecha dice «⏳ Pianoteq: quitando 1 nota… (sigue sonando la
+    pista actual)». Cuando el render nuevo está listo lo reemplaza en el mismo punto y el aviso
+    dice «nota quitada ✓» (se va solo a los 6 s). Antes se cortaba Pianoteq y sonaba el MIDI.
+  - **Cualquier otra edición** (subir, mover, alargar, agregar, deshacer un borrado): mientras se
+    genera de nuevo, suena el MIDI con la edición aplicada y vuelve a Pianoteq en el mismo punto.
+  Con «Stem» o «Canción completa» la nota sigue sonando porque es la grabación original.
 - **🗑 Borradas (N)**, en la barra de reproducción (las dos vistas): las notas borradas, la más
   reciente primero, con su nombre, su momento y hace cuánto se borraron; **Restaurar** devuelve
   una y **Restaurar todas**, todas. El historial lo guarda el servidor junto con las notas
@@ -159,9 +172,11 @@ compartas y, si lo prefieres, usa una cuenta secundaria. Cuando caduque, vuelve 
 
 ### Velocidad y pedal
 
-- **Velocidad** (de 25 % a 125 %, doble clic vuelve a 100 %): reproduce más lento sin cambiar la
-  afinación. El audio, el MIDI, Pianoteq y el cursor van juntos. Queda guardada en este
-  navegador.
+- **Velocidad**: cuatro botones fijos, **25 %, 50 %, 70 % y 100 %** (antes un deslizador de 25 a
+  125 %). Reproduce más lento sin cambiar la afinación; el audio, el MIDI, Pianoteq y el cursor
+  van juntos. Queda guardada en este navegador (una velocidad guardada antes, como 85 %, se
+  abre en la más cercana). Con Pianoteq, cada botón muestra **✓** cuando esa velocidad ya está
+  generada para las dos manos, la derecha y la izquierda.
 - **Pedal** (de 0 % a 100 %): cuánto sostiene el pedal al reproducir el MIDI o Pianoteq. La
   partitura no cambia; solo cuánto suena cada nota. El modelo de piano oye el pedal del pianista
   aparte de las teclas, así que:
@@ -201,11 +216,29 @@ instante. Una canción que nunca sonó con Pianoteq empieza con el último piano
   paralelo: la partitura se abre de inmediato y Pianoteq sigue detrás. Medido con «1st» (3:45):
   listo ~47 s después de aparecer la partitura (11 s en preparar las notas, 36 s de Pianoteq).
   Al abrir una partitura que aún no lo tenía, empieza en ese momento. Al elegir «Pianoteq» ya
-  está listo (sale de la caché, `jobs/<id>/score/<stem>/pianoteq/`, se guardan los últimos 4).
+  está listo (sale de la caché, `jobs/<id>/score/<stem>/pianoteq/`, se guardan los últimos 8).
   Para apagarlo: `STEMDECK_PIANOTEQ_AUTO=0`.
+- **Cada velocidad y cada mano, también sin pedirlo:** después del render principal se
+  generan en segundo plano, en este orden, las 12 variantes: a **100 %, 70 %, 50 % y 25 %**, y en
+  cada velocidad las dos manos, la derecha sola y la izquierda sola. Así elegir una velocidad o
+  **🔇 Silenciar** una mano suena con Pianoteq al instante, sin pasar al MIDI. Se hacen de a una
+  (Pianoteq usa toda la CPU; en paralelo no terminaría antes) y con **prioridad baja** del
+  sistema, para que la página, el audio y una separación sigan fluidos. El render que pide la
+  página va siempre primero (el de fondo se corta y se retoma después). Tras una edición se
+  vuelven a generar las 12 de las notas nuevas (las de notas viejas se descartan).
+- **Toda la biblioteca:** al arrancar el servidor (15 s después) se revisan todas las
+  partituras y se genera lo que falte, por velocidad: primero todas las canciones a 100 % (la
+  última trabajada primero), después todas a 70 %, 50 % y 25 %. Lo ya generado se salta al
+  instante. `GET /api/score/pianoteq/queue` dice qué se está generando y cuántos faltan.
+- **Cuánto ocupa:** el juego completo de una canción es ~25 veces su duración en audio (las
+  lentas son más largas: a 25 % dura 4 veces más). Para 31 partituras (98 min de música):
+  ~2 480 min de audio, ~7,5 GB en FLAC y unas 6-7 h de Pianoteq la primera vez. Se guardan
+  hasta 16 renders por partitura (un juego son 12).
 - Al editar, la versión anterior sigue sonando y, un segundo después del último cambio, se
   genera una nueva que la reemplaza sin cortar la reproducción (también si estás escuchando
-  otra cosa: Pianoteq queda al día).
+  otra cosa: Pianoteq queda al día). Un render de notas que ya volviste a editar se descarta
+  (o se corta si ya había empezado): antes cada edición dejaba uno en cola, se generaban de a
+  uno (~30 s cada uno) y el que esperabas llegaba minutos tarde, detrás de versiones viejas.
 - Una canción cuyo primer pulso llega después de 16,7 s no se podía exportar a MIDI (ni a
   Pianoteq); ahora la introducción usa varias negras de entrada.
 - Los instrumentos que no tengas con licencia suenan como en la demo de Pianoteq (con
@@ -220,21 +253,31 @@ La barra **Práctica** (debajo de la de reproducción):
 | Control | Qué hace |
 |---|---|
 | **Bucle → A / B** | El compás que suena ahora pasa a ser el inicio (A) o el final (B) del bucle. Con notas elegidas, **🔁** (o la tecla **L**) repite sus compases. Al pasar B vuelve a A. |
-| **+5 % / +10 % por vuelta** | Cada vuelta completa sube la velocidad hasta 100 %. |
+| **Subir velocidad cada 1 / 2 / 3 vueltas** | Al completar esas vueltas pasa a la velocidad siguiente: 25 → 50 → 70 → 100 %. |
 | **Manos** | «Toco la derecha»: el MIDI y Pianoteq tocan solo la izquierda, y en el piano la izquierda se ve tenue (al revés con «Toco la izquierda»). Con «Stem» o «Canción completa» no se puede separar una mano: lo avisa. |
 | **Metrónomo** | Un clic en cada pulso de los compases de la partitura, más agudo en el primero. |
 | **Cuenta** | 1 o 2 compases de clics antes de empezar al pulsar ▶ (y al volver al inicio del bucle). |
 | **🎹 Teclado MIDI** | Un teclado conectado por USB (Chrome o Edge). **Libre**: tus teclas se ven en el piano, en verde si tocaste una nota de la canción a tiempo y en rojo si no; se cuentan los aciertos. **Esperarme**: la canción se detiene en cada acorde (de la mano que practicas) hasta que lo tocas. **Sonar mis teclas**, si tu teclado no suena solo. |
 
 En el piano con notas cayendo hay una línea en cada pulso y una más marcada en cada compás,
-con su número; el bucle se ve como una franja entre A y B. **Anticipación** (2-8 s) es cuánto
-de la canción se ve antes de llegar a las teclas.
+con su número; el bucle se ve como una franja entre A y B. **Notas a la vista** (1-20 s,
+deslizador en la barra del piano) es cuánto de la canción se ve antes de llegar a las teclas: a
+la derecha las notas caen más lento y más juntas (ves venir más), a la izquierda más rápido y
+separadas. También **Ctrl + rueda** (o pellizcar el trackpad) sobre el piano, **pellizcar con
+dos dedos** en la tablet, y las teclas **+** / **−**; mientras cambia, arriba del piano dice
+«Notas a la vista: 8 s». Doble clic en el deslizador: 4 s. Se recuerda en el equipo.
 
 **Mover la canción con el dedo o el ratón (piano):** arrastra el carril hacia abajo (las notas
 bajan: adelanta) o hacia arriba (retrocede); el momento que tenías bajo el dedo sigue bajo el
 dedo. Sonando, cualquier arrastre mueve la canción (y sigue sonando al soltar; las notas no se
 editan); en pausa, arrastrar sobre una nota la sigue editando como antes y en el espacio vacío
-mueve la canción. Un toque sin arrastrar selecciona la nota, como siempre.
+mueve la canción. Un toque sin arrastrar selecciona la nota, como siempre; si la canción está
+sonando, además la **pausa** ahí, para editar esa nota (▶ o Espacio para seguir). **Doble clic o
+doble toque en el fondo vacío** pausa la canción; otro doble clic o doble toque la reproduce.
+
+Los avisos que van y vienen («Mano derecha: 1 nota · guardando…», «Pianoteq: generando…»)
+flotan abajo a la derecha: antes, en su barra, la alargaban unos segundos, la página ganaba una
+barra de desplazamiento y la vista del piano se redibujaba más chica.
 
 **Arriba a la derecha:** **▤ Ocultar paneles** (tecla **P**) deja una sola línea sobre la vista:
 ▶/❚❚, la canción, el tiempo, el compás, la velocidad, el bucle y qué suena; **▤ Paneles** los
@@ -245,6 +288,46 @@ de la pantalla —88 teclas en 1920×1080: teclas de 37 × 203 px—, la franja 
 notas). Al salir vuelve el estilo que tenías. **Video** también se puede elegir en **Estilo** sin
 pantalla completa. En un iPhone (sin pantalla completa del navegador) se usa la misma vista de
 borde a borde dentro de la página.
+
+**⚙ Menú rápido** (con los paneles ocultos o en pantalla completa): un engranaje arriba a la
+derecha, medio transparente mientras no tocas nada y de color en cuanto mueves el mouse o tocas
+la pantalla (vuelve a medio transparente a los 2,5 s). Al tocarlo se despliega hacia abajo, un
+botón bajo otro, y se cierra solo a los 6 s sin tocarlo (o al tocar fuera):
+
+| Botón | Qué hace |
+|---|---|
+| ✏️ Editar notas | Tocar una nota la elige y muestra la barra para cambiarla (mano, dedo, borrar), también con los paneles ocultos |
+| ＋ Agregar nota | Como **＋ Nota** (N) |
+| ↶ Deshacer | La última edición |
+| Velocidad 25 · 50 · 70 · 100 | Con ✓ las que Pianoteq ya tiene listas |
+| Silenciar Izquierda · Derecha | Como **🔇 Silenciar** |
+| 🖐 Activar dedos / Ver dedos | Activa los dedos en la canción, o muestra u oculta sus números |
+| Notas a la vista − · ＋ | Menos o más segundos en pantalla |
+| ▤ Mostrar paneles · ⛶ Pantalla completa | Volver a los paneles, entrar o salir de pantalla completa |
+
+## Almacenamiento (app principal → Ajustes → Almacenamiento)
+
+Dice dónde están las canciones (la carpeta), cuánto ocupa StemDeck y cuánto queda libre en el
+disco, y cuánto ocupa cada cosa, en total y canción por canción (la que más ocupa primero; al
+abrir una se ve su carpeta y su detalle):
+
+| Tipo | Qué es | ¿Se puede limpiar? |
+|---|---|---|
+| Stems | las pistas separadas | No (para eso, la Papelera) |
+| Partituras | notas, ediciones, historial | No |
+| Copias de la partitura | la canción rearmada desde los stems y copias FLAC para reproducir | Sí, se vuelven a hacer al abrirla |
+| Pianoteq 100 % | ambas manos a velocidad normal | Sí («Todo Pianoteq») |
+| Pianoteq cada mano | derecha sola e izquierda sola a 100 % | Sí |
+| Pianoteq lentos | 70, 50 y 25 % (lo que más ocupa) | Sí |
+| Pianoteq versiones anteriores | de notas que editaste después, u otro piano | Sí |
+| Video, archivos subidos | el video de notas cayendo, el archivo original de una subida | No |
+
+Los botones de limpiar (de todas las canciones o de una) dicen cuánto liberan; el primer clic
+pregunta («¿Borrar 4,1 GB? Clic de nuevo») y el segundo borra. Lo de Pianoteq se vuelve a
+generar cuando lo pides (al elegir esa velocidad o mano) o en segundo plano según **Pianoteq en
+segundo plano**: *Todas las velocidades y cada mano* (por defecto), *100 % y cada mano*, *Solo
+100 %* o *Nada*. Si borras los lentos con «Todas las velocidades» elegido, vuelven a generarse:
+lo avisa. `GET /api/storage`, `POST /api/storage/clean`, `PUT /api/storage/background`.
 
 **Cada canción recuerda en este navegador** dónde la dejaste, qué estabas escuchando, la
 velocidad, el bucle y la mano que practicas. El **𝄞** del mezclador (escritorio y celular) abre
@@ -264,6 +347,20 @@ Cada cambio se guarda en el servidor al instante, en
 `jobs/<id>/score/<stem>/notes.json`, y sigue ahí al recargar o reiniciar.
 **Restaurar original** vuelve a lo que oyó el modelo, que se guarda aparte en `raw.json`.
 
+**Deshacer en la tablet (o en la vista piano):** **↶** y **↷** están en la barra de reproducción
+(las dos vistas; ↶ también en la línea de «Ocultar paneles»). **Toque con dos dedos** sobre el
+piano: deshacer; **con tres dedos**: rehacer. Un aviso dice qué se deshizo («↶ Deshecho: Movida»).
+
+**🕘 Historial** (barra de reproducción): cada edición guardada, la más reciente primero, con su
+nombre, qué notas cambió («Do4 → Re4 en 0:12», «−Fa4 en 0:03», «Sol4 0:10 → 0:11») y hace
+cuánto. Se guarda en el servidor (`history.jsonl`, las últimas 300), así que sigue ahí al
+recargar o desde otro equipo, a diferencia de Ctrl+Z, que vive en la página. **↶ Volver a antes
+de esta** deshace esa edición y las posteriores (pregunta antes), y queda como una edición más:
+se puede volver. **Volver al original (sin ediciones)** deja la partitura como salió de la
+transcripción; también queda en el historial y se puede deshacer. «🗑 Borradas» sigue listando
+solo notas borradas; una nota movida sin querer se busca en el historial. Volver a extraer el
+MIDI empieza un historial nuevo.
+
 | Acción | Cómo |
 |---|---|
 | Seleccionar | clic · Shift/Ctrl+clic para añadir · arrastrar sobre el papel para un área · Ctrl+A todo |
@@ -272,11 +369,13 @@ Cada cambio se guarda en el servidor al instante, en
 | Subir/bajar octava | Ctrl+↑ / Ctrl+↓ |
 | Mover un paso de la rejilla | ← / → |
 | Alargar/acortar | Shift+→ / Shift+← |
-| Cambiar de clave (mano) | H |
+| Cambiar de clave (mano) | H, o **Derecha / Izquierda / Auto** en la barra flotante |
+| Corregir manos pintando | vista piano → **🖌 Corregir manos**, y toca o arrastra sobre las notas |
 | Poner o cambiar un acorde | clic en el acorde, o A con una nota seleccionada |
 | Añadir notas | **＋ Nota** o N, y toca donde va cada una (Esc o N para terminar) |
 | Unir dos notas seguidas en una tecla | en el piano, arrastra hacia abajo el borde inferior de la segunda hasta la primera |
-| Deshacer / rehacer | Ctrl+Z / Ctrl+Y (cada paso también se guarda) |
+| Deshacer / rehacer | Ctrl+Z / Ctrl+Y, ↶ / ↷, o toque con dos / tres dedos sobre el piano (cada paso también se guarda) |
+| Historial de ediciones | **🕘 Historial**: volver a antes de cualquier edición, o al original |
 | Escuchar desde una nota | doble clic |
 | Quitar notas fantasma en bloque | **Limpiar…**: velocidad mínima y duración mínima, con vista previa en rojo |
 | Fusionar notas repetidas | **Limpiar…** → **Unir notas repetidas** |
@@ -324,17 +423,33 @@ banda (9 min), una grabación de piano solo (3:45) y la canción de calibración
   pero al reproducir, el MIDI de la página (desafinado con `detune`) y Pianoteq (con un pitch
   bend, que respeta con rango ±2 semitonos) suenan a la afinación de la canción. En «Saturday
   Night» midieron +38.2 y +38.5 cents contra +38.1 del stem, así que «Stem + MIDI» suena afinado.
-- **Las manos.** «Manos: Auto» (lo normal en el piano) sigue cada mano en el tiempo. La
-  izquierda toca su bajo y todo lo que alcanza por encima de él (hasta 14 semitonos), aunque
-  pase de Do4: así el arpegio de Comptine (Re3…Mi4) queda en clave de fa y la melodía en clave
-  de sol. Cuando la derecha está tocando bastante más arriba (una quinta o más), la izquierda
-  alcanza también una décima si repite una nota de su propio patrón (el Si2…Re♯4 de Porz Goret),
-  y toda nota hasta Do4 bajo la derecha es suya aunque venga de un bajo muy grave (Do2 → Sol3
-  en la Valse d'Amélie). «Corte fijo» manda todo lo que está desde «Mano derecha desde» hacia
-  arriba a clave de sol. **H** mueve una nota a la otra mano, y esa decisión manda. Límite
-  conocido: una nota intermedia sobre Do4 (un Re♯4 entre Sol♯3 y una melodía en Fa4) puede ser
-  de cualquiera de las dos manos. Altura y tiempo no alcanzan para decidirlo, así que ahí se
-  corrige con H.
+- **Las manos.** «Manos: Auto» (lo normal en el piano) usa una red neuronal pequeña
+  (`app/score/hands.py`, GRU bidireccional, el método de Hadjakos et al. 2019) entrenada con
+  **hannds**: 122 piezas que pianistas tocaron con cada mano en un teclado distinto, así que se
+  sabe qué mano tocó cada nota. Lee el pasaje completo hacia adelante y hacia atrás (altura,
+  distancia a la nota anterior y siguiente, duración, fuerza y lugar en el acorde). Dentro de un
+  acorde la izquierda siempre toma las notas de abajo. Medido con
+  `scripts/score/hands_benchmark.py` en las canciones cuyas manos se conocen (videos con cada
+  mano en su color y el nocturno de Chopin desde su partitura): **96,0 %** de notas en la mano
+  correcta, contra 88,7 % de las reglas anteriores y 87,0 % de un corte fijo en Do4. En 12
+  piezas de hannds que no vio al entrenar, 97,0 % (el corte fijo, 78,1 %). Además, una mano no
+  puede sostener teclas separadas más de una novena: una nota dudosa va a la mano que la
+  alcanza. Ningún método llega al 100 % solo con altura y tiempo: una nota intermedia (un Re♯4
+  entre Sol♯3 y una melodía en Fa4) puede ser de cualquiera de las dos manos; la literatura
+  publica 92-95 %.
+  **Corregir:** cada mano que pones (barra flotante, H o 🖌 Corregir manos) manda siempre, y
+  además el programa la usa de pista: vuelve a decidir las notas que no tocaste y lleva con ella
+  la **misma tecla** en ±4 s. Simulando a alguien que corrige la primera nota equivocada hasta
+  que no queda ninguna: 267 errores se arreglaron con 201 correcciones (sin la propagación,
+  unas 250). Con el pincel, una sola pasada corrige varias notas a la vez. Tras guardar, el aviso dice cuántas notas de alrededor cambió el programa. **Auto** en
+  la barra o en el pincel devuelve la nota al programa. En las canciones de video, todas las
+  notas vienen con la mano del video y no se recalculan. «Corte fijo» manda todo lo que está
+  desde «Mano derecha desde» hacia arriba a clave de sol; en Auto ese punto solo desempata las
+  notas que la red deja dudosas (una melodía sola alrededor del Do central va a la derecha).
+  Cambio de criterio: en figuras ambiguas la red puede repartir distinto que las reglas de
+  antes; por ejemplo, en Comptine pasa a la derecha unos 60 Re4/Mi4 de la parte alta del
+  arpegio que antes quedaban en la izquierda. Ahí se corrige una nota por tecla y las vecinas la
+  siguen. Reentrenar: `scripts/score/train_hands.py --hannds <carpeta data-hannds>`.
 - **El pulso desde las notas.** Cuando el pulso de la canción no es fiable, se calcula otro
   sobre los ataques de las notas transcritas y gana el más regular. En La Valse d'Amélie, las
   notas fuera de la rejilla bajaron de 13 % a 1 %.

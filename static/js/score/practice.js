@@ -44,11 +44,28 @@ export function loopJump(loop, t) {
   return t >= loop.b ? loop.a : null;
 }
 
-/** The speed after one more time round the loop: up by `step` % until
- *  `target` (the practice ramp), never past it. */
-export function rampSpeed(current, step, target = 100) {
-  if (!step || current >= target) return current;
-  return Math.min(target, current + step);
+/** The practice speeds, in %: the only ones offered (the «Velocidad»
+ *  buttons). The server renders Pianoteq at each of them beforehand, for
+ *  each hand (app/api/score.py PT_SPEEDS), so choosing one plays at once. */
+export const SPEEDS = [25, 50, 70, 100];
+
+/** The practice speed nearest to `pct` (a speed saved before, e.g. 85). */
+export function snapSpeed(pct) {
+  const v = Number(pct);
+  if (!Number.isFinite(v)) return 100;
+  return SPEEDS.reduce((best, s) => (Math.abs(s - v) < Math.abs(best - v) ? s : best), 100);
+}
+
+/** The next practice speed up from `current` (the loop ramp), up to 100. */
+export function nextSpeed(current) {
+  return SPEEDS.find((s) => s > snapSpeed(current)) ?? 100;
+}
+
+/** The speed after `loops` times round the loop with the ramp: one step up
+ *  every `every` loops (0: the same speed). */
+export function rampSpeed(current, every, loops) {
+  if (!every || loops % every !== 0) return snapSpeed(current);
+  return nextSpeed(current);
 }
 
 /** Beats of the bars, evenly spaced within each one: [{t, down}] in time
