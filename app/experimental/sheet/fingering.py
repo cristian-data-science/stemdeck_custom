@@ -86,6 +86,16 @@ PREFER_NEAR = 1.5  # only the onsets right beside it repeat: a weaker hint
 FAST_SEC = 0.35  # a context is "fast" (no time to reposition) under this
 HOLD_OVERLAP = 0.03  # bars overlapping less than this are one after the other
 BUSY_SEC = 4.0  # a drawn note longer than this is the pedal: its key is free
+OCTAVE = 12  # an onset this wide or wider is played with 1 and 5 on its outer keys
+# A key struck again takes the finger it had (see _recall_cost). Parncutt's
+# spans made a change on the same key nearly free (1 -> 2 or 4 -> 5 on one key
+# cost 1): 13.6 % of immediate repeats and 28 % of keys coming back with the
+# hand in place changed finger (5 -> 3 -> 1 on one key), on 13 songs.
+REPEAT_KEY = 6.0  # the same key in the onset right before
+RETURN_KEY = 2.5  # the same key a few onsets back, the hand still around it
+RECALL_SEC = 2.0  # how far back a key is remembered
+RECALL_ONSETS = 12
+RECALL_SPAN = 12  # semitones the hand covered meanwhile: wider, it moved
 
 
 def _black(midi: int) -> bool:
@@ -176,6 +186,15 @@ def _candidates(group: list[dict], hand: str, fixed: dict[str, int]) -> list[tup
             out.append(fingers)
     if not out:  # contradictory fixed fingers: ignore them for this onset
         out = [c if hand == "R" else tuple(reversed(c)) for c in combinations(range(1, 6), k)]
+    # An octave (or wider): thumb and little finger on its outer keys, always.
+    # The hand keeps that shape while the octaves move; 1-4 came out on 40 %
+    # of the octaves of 13 songs (the 4 had played the key just before, or a
+    # black key) and the fingers changed under a hand that does not change.
+    if k >= 2 and group[k - 1]["midi"] - group[0]["midi"] >= OCTAVE:
+        outer = (1, 5) if hand == "R" else (5, 1)
+        wide = [c for c in out if (c[0], c[-1]) == outer]
+        if wide:
+            out = wide
     return out
 
 
@@ -257,6 +276,50 @@ def _held_cost(held: list[tuple], group: list[dict], fingers: tuple, hand: str) 
     return cost
 
 
+def _recall_cost(
+    recent: list[tuple], gi: int, group: list[dict], fingers: tuple, hand: str
+) -> float:
+    """Keys struck lately on this path (onset index, start, midi, finger,
+    newest last): a key struck again with another finger costs REPEAT_KEY
+    right after (less after a long wait) and RETURN_KEY a few onsets later
+    if the hand stayed in place meanwhile -- no key in between took that
+    finger elsewhere or sits on the wrong side of it (the thumb passed under,
+    a finger crossed over), and the keys in between span at most RECALL_SPAN.
+    A pianist keeps a key's finger while the hand stays in place; a new finger
+    on the same key is hard to follow."""
+    if not recent:
+        return 0.0
+    t = group[0]["start"]
+    cost = 0.0
+    for n, f in zip(group, fingers, strict=False):
+        key = n["midi"]
+        between: list[tuple[int, int]] = []
+        for og, start, midi, f0 in reversed(recent):
+            if midi != key:
+                between.append((midi, f0))
+                continue
+            if f0 == f:
+                break
+            if og == gi - 1:
+                dt = t - start
+                cost += REPEAT_KEY * (1.0 if dt <= 1.0 else max(0.3, 1.0 / dt))
+                break
+            mids = [m for m, _ in between] + [key]
+            if max(mids) - min(mids) > RECALL_SPAN:
+                break
+            sign = 1 if hand == "R" else -1
+            if all(g != f0 and (m - key) * (g - f0) * sign > 0 for m, g in between):
+                cost += RETURN_KEY
+            break
+    return cost
+
+
+def _remember(recent: list[tuple], gi: int, group: list[dict], fingers: tuple) -> list[tuple]:
+    t = group[0]["start"]
+    kept = [r for r in recent if r[0] > gi - RECALL_ONSETS and t - r[1] <= RECALL_SEC]
+    return kept + [(gi, t, n["midi"], f) for n, f in zip(group, fingers, strict=False)]
+
+
 def _contexts(groups: list[list[dict]]) -> list[tuple]:
     """Each onset's melodic context: its keys, the keys of the two onsets
     before and after it, and which gaps are fast. Two onsets with the same
@@ -335,23 +398,25 @@ def _viterbi(
             if want is not None and want[0] != fingers:
                 inner += want[1] * sum(a != b for a, b in zip(want[0], fingers, strict=False))
             if gi == 0:
-                back, best, held = -1, 0.0, []
+                back, best, held, recent = -1, 0.0, [], []
             else:
                 best, back = min(
                     (
                         pc
                         + _move_cost(groups[gi - 1], pf, group, fingers, hand)
-                        + _held_cost(ph, group, fingers, hand),
+                        + _held_cost(ph, group, fingers, hand)
+                        + _recall_cost(pr, gi, group, fingers, hand),
                         j,
                     )
-                    for j, (pc, _, pf, ph) in enumerate(prev)
+                    for j, (pc, _, pf, ph, pr) in enumerate(prev)
                 )
                 held = [h for h in prev[back][3] if h[0] > t + HOLD_OVERLAP]
+                recent = prev[back][4]
             held = held + [
                 (min(n.get("end", n["start"]), n["start"] + BUSY_SEC), n["midi"], f)
                 for n, f in zip(group, fingers, strict=False)
             ]
-            cur.append((best + inner, back, fingers, held))
+            cur.append((best + inner, back, fingers, held, _remember(recent, gi, group, fingers)))
         trail.append([c[:3] for c in cur])
         prev = cur
     # Back to the start.

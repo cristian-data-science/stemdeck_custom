@@ -432,9 +432,14 @@ def _fill_staff(measures, staff, events, subdiv, table, key, info) -> None:
                                 "measure": m.number,
                                 "heads": [],
                                 "spelled": (letter, alter, octave),
-                                # Where the drawn note ends: the chord's end,
-                                # cut at the next onset on this staff.
-                                "drawn_off": off,
+                                # Where the note's bar ends (falling notes,
+                                # lit key, export): its own end, cut at the
+                                # next onset on this staff. Not the chord's
+                                # end: a staccato note struck with a long bass
+                                # (moved to the left hand) took the bass's
+                                # length. The score still draws the chord with
+                                # one duration (one voice per staff).
+                                "drawn_off": min(off, n["off"]),
                             },
                         )
                         xml_id = (

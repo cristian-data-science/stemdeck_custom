@@ -437,6 +437,82 @@ def test_a_fast_run_never_puts_one_finger_on_two_keys_in_a_row():
             assert f[a["id"]] != f[b["id"]], (a, b)
 
 
+def _timed(pairs, hand="R"):
+    """(midi or [midis], start) -> notes; a list is a chord."""
+    out = []
+    for midis, t in pairs:
+        for m in midis if isinstance(midis, list) else [midis]:
+            out.append({"id": f"n{len(out)}", "midi": m, "start": t, "end": t + 0.3, "hand": hand})
+    return out
+
+
+def test_a_repeated_key_keeps_its_finger():
+    # From "Cry": C5 struck again and again, then a chord with the thumb a key
+    # lower. The last C5 went to the 2 to free the thumb (a change on one key
+    # cost almost nothing): hard to follow on the falling notes.
+    notes = _timed(
+        [([72, 84], 0.0), (72, 0.45), (72, 0.64), (72, 1.1), ([71, 74, 83], 1.56), ([71, 74], 1.99)]
+    )
+    f = suggest(notes)
+    assert f["n0"] == f["n2"] == f["n3"] == f["n4"], f
+    # A run down onto a repeated A4, a dip to E4 and the A4 again (BAILE
+    # INOLVIDABLE): the A4 is one finger all three times.
+    notes = _timed(
+        [
+            (74, 0.0),
+            (72, 0.34),
+            (71, 0.68),
+            (69, 1.02),
+            (69, 1.35),
+            (64, 1.85),
+            (69, 2.02),
+            (72, 2.36),
+        ]
+    )
+    f = suggest(notes)
+    assert f["n3"] == f["n4"] == f["n6"], f
+
+
+def test_a_melody_in_octaves_is_always_thumb_and_little_finger():
+    # From "Cry": a single G5 on the 4, then octaves moving up and down, over
+    # black keys too. 1-4 came out on the octave after the 4 (and on 40 % of
+    # octaves overall): the hand keeps its shape, so 1-5 every time.
+    right = _timed(
+        [
+            (79, 0.0),
+            (78, 0.41),
+            ([67, 79], 0.80),
+            ([69, 81], 1.20),
+            ([70, 82], 1.60),
+            ([66, 78], 2.0),
+            ([67, 79], 2.4),
+        ]
+    )
+    f = suggest(right)
+    octaves = [right[i : i + 2] for i in range(2, len(right), 2)]
+    assert all((f[a["id"]], f[b["id"]]) == (1, 5) for a, b in octaves), f
+    # The left hand: little finger on the bottom key, thumb on the top one.
+    left = _timed(
+        [(47, 0.0), ([35, 47], 0.42), ([40, 52], 0.83), ([35, 47], 1.24), ([43, 55], 1.65)],
+        hand="L",
+    )
+    f = suggest(left)
+    octaves = [left[i : i + 2] for i in range(1, len(left), 2)]
+    assert all((f[a["id"]], f[b["id"]]) == (5, 1) for a, b in octaves), f
+
+
+def test_a_key_coming_back_with_the_hand_in_place_keeps_its_finger():
+    # A turn around E4 (Valse d'Amélie): the hand never moves, so each key
+    # keeps one finger all the way.
+    midis = [64, 65, 67, 65, 64, 62, 64, 65, 64, 62, 64, 65, 67]
+    notes = _seq(midis, dt=0.16)
+    f = suggest(notes)
+    by_key: dict[int, set[int]] = {}
+    for n in notes:
+        by_key.setdefault(n["midi"], set()).add(f[n["id"]])
+    assert all(len(v) == 1 for v in by_key.values()), by_key
+
+
 def test_the_weak_fingers_are_not_taken_without_a_reason():
     # Three neighbouring keys up: 1-2-3 (Parncutt's weak-finger rule), not 2-3-4 / 3-4-5.
     assert _fingers(_seq([60, 62, 64])) == [1, 2, 3]

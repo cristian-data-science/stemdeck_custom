@@ -328,8 +328,14 @@ def test_same_pitch_twice_at_one_onset_is_one_head():
         {"id": "n0002", "midi": 62, "start": 0.01, "end": 2.6, "velocity": 70},
         {"id": "n0003", "midi": 69, "start": 0.0, "end": 2.6, "velocity": 70},
     ]
+    # Split at middle C: which hand a lone D4+A4 is (either can be) is not
+    # what this test is about.
     eng = engrave(
-        notes, beats, [{"beat": 0, "beats_per_bar": 4}], parse_key("C", "Major"), Settings()
+        notes,
+        beats,
+        [{"beat": 0, "beats_per_bar": 4}],
+        parse_key("C", "Major"),
+        Settings.from_dict({"hands": "split"}),
     )
     drawn = [h.note_id for it in eng.measures[0].staves[1] for h in it.heads]  # D4: treble
     assert "n0002" in drawn and "n0001" not in drawn  # the longer one is kept
@@ -587,17 +593,35 @@ def _arpeggio_under_melody():
     return notes
 
 
-def test_left_hand_arpeggio_stays_in_the_left_hand():
-    from app.score.hands import assign_hands
+def _with_first_of_each_key(notes, keys, hand):
+    """The user puts the first note of each of `keys` in `hand`."""
+    first = {m: next(n["id"] for n in notes if n["midi"] == m) for m in keys}
+    return [{**n, "hand": hand if n["id"] in first.values() else None} for n in notes], first
 
-    notes = _arpeggio_under_melody()
+
+def test_left_hand_arpeggio_follows_one_correction_per_key():
+    # Pitch and time alone leave the arpeggio's top (D4/E4 under a melody
+    # from G4) to either hand: the model, trained on pianists, gives some of
+    # them to the right hand. The old rules kept them all left, but were
+    # 85 % right against 95 % on songs with known hands (hands.py). One
+    # correction per key brings that key's notes nearby along.
+    from app.score.hands import PROPAGATE_SEC, assign_hands
+
+    notes, first = _with_first_of_each_key(_arpeggio_under_melody(), (62, 64), "L")
     hands = assign_hands(notes, 60)
-    wrong = [(n["midi"], n["start"]) for n in notes if hands[n["id"]] != n["truth"]]
-    assert wrong == []
+    for m, fid in first.items():
+        t0 = next(n["start"] for n in notes if n["id"] == fid)
+        nxt = min(
+            (n for n in notes if n["midi"] == m and n["start"] > t0), key=lambda n: n["start"]
+        )
+        assert nxt["start"] - t0 < PROPAGATE_SEC and hands[nxt["id"]] == "L"
+    assert all(hands[n["id"]] == "R" for n in notes if n["truth"] == "R")  # the melody
+    assert all(hands[n["id"]] == "L" for n in notes if n["midi"] < 59)  # D3, F#3
+    # Engraved as the hands say: the notes set left are on the bass staff.
     eng = engrave(
         notes, [i * 0.6 for i in range(40)], [], parse_key("E", "Natural Minor"), Settings()
     )
-    assert all(eng.notes[n["id"]]["staff"] == (2 if n["truth"] == "L" else 1) for n in notes)
+    assert all(eng.notes[n["id"]]["staff"] == (2 if hands[n["id"]] == "L" else 1) for n in notes)
     split = engrave(
         notes,
         [i * 0.6 for i in range(40)],
@@ -631,11 +655,12 @@ def _note(i, midi, t, truth, dur=0.3):
     }
 
 
-def test_left_hand_figure_spread_to_a_tenth_stays_in_the_left_hand():
+def test_left_hand_figure_spread_to_a_tenth_follows_one_correction():
     # Porz Goret: the left hand rocks G#3-D#4 and then spreads B2-B3-G#3-D#4 (a
-    # tenth above its bass) while the right hand plays around D#5-A#5. Beyond
-    # the plain reach (14 semitones) the D#4 went up to the treble staff.
-    from app.score.hands import assign_hands
+    # tenth above its bass) while the right hand plays around D#5-A#5. The
+    # inner D#4 is either hand by pitch and time; one D#4 put in the left
+    # hand takes the D#4s around it along.
+    from app.score.hands import PROPAGATE_SEC, assign_hands
 
     notes, t = [], 0.0
     for _ in range(4):  # the ostinato the left hand sets up
@@ -647,8 +672,28 @@ def test_left_hand_figure_spread_to_a_tenth_stays_in_the_left_hand():
         for m, hand in ((47, "L"), (82, "R"), (63, "L"), (59, "L"), (75, "R"), (63, "L")):
             notes.append(_note(len(notes), m, t, hand))
             t += 0.2
+    notes, first = _with_first_of_each_key(notes, (63,), "L")
     hands = assign_hands(notes, 60)
-    assert [(n["midi"], n["start"]) for n in notes if hands[n["id"]] != n["truth"]] == []
+    t0 = next(n["start"] for n in notes if n["id"] == first[63])
+    wrong = [(n["midi"], n["start"]) for n in notes if hands[n["id"]] != n["truth"]]
+    assert all(m == 63 and s - t0 > PROPAGATE_SEC / 2 for m, s in wrong)
+
+
+def test_a_correction_pulls_only_its_own_key_nearby():
+    import numpy as np
+
+    from app.score.hands import PROPAGATE_SEC, propagate
+
+    notes = [
+        {"id": "a", "midi": 60, "start": 0.0, "hand": "L"},
+        {"id": "b", "midi": 60, "start": PROPAGATE_SEC / 4},
+        {"id": "c", "midi": 60, "start": PROPAGATE_SEC * 2},
+        {"id": "d", "midi": 61, "start": PROPAGATE_SEC / 4},
+    ]
+    p = propagate(notes, [0, 1, 2, 3], np.full(4, 0.9))
+    assert p[1] < 0.01  # same key, near: pulled to the left hand
+    assert p[2] == pytest.approx(0.9) and p[3] == pytest.approx(0.9)  # far / another key
+    assert np.array_equal(propagate(notes[1:], [0, 1, 2], np.full(3, 0.9)), np.full(3, 0.9))
 
 
 def test_arpeggio_from_a_deep_bass_stays_in_the_left_hand():
@@ -801,3 +846,28 @@ def test_a_held_note_sounds_its_whole_length():
     ]
     ends = pedal.sound_ends(notes, {"a": 1.0, "b": 1.0, "c": 1.0, "d": 2.5})
     assert ends["a"] == 8.0 and ends["b"] == 1.0 and ends["c"] == 2.0
+
+
+def test_a_short_note_struck_with_a_long_one_keeps_its_own_length():
+    # A staccato C4 struck with a long bass G2, then moved to the left hand:
+    # one chord on the bass staff. The score draws the chord with one duration
+    # (the longer), but the note's bar (falling notes, lit key, export) keeps
+    # its own length; it took the bass's whole note before.
+    beats = [i * 0.5 for i in range(40)]
+    notes = [
+        {"id": "bass", "midi": 43, "start": 0.0, "end": 1.95, "velocity": 80},  # a whole note
+        {"id": "short", "midi": 60, "start": 0.0, "end": 0.24, "velocity": 80, "hand": "L"},  # an eighth
+    ]
+    eng = engrave(
+        notes, beats, [{"beat": 0, "beats_per_bar": 4}], parse_key("C", "Major"), Settings()
+    )
+    assert eng.notes["short"]["staff"] == eng.notes["bass"]["staff"] == 2
+    assert eng.notes["bass"]["draw_end"] == 2.0
+    assert eng.notes["short"]["draw_end"] == 0.25
+    # Still cut at the next onset of its hand: a long note under moving notes.
+    notes.append({"id": "next", "midi": 48, "start": 1.0, "end": 1.4, "velocity": 80, "hand": "L"})
+    eng = engrave(
+        notes, beats, [{"beat": 0, "beats_per_bar": 4}], parse_key("C", "Major"), Settings()
+    )
+    assert eng.notes["bass"]["draw_end"] == 1.0
+    assert eng.notes["short"]["draw_end"] == 0.25
