@@ -9,6 +9,34 @@ import { noteLabel, soundEnd } from "./model.js";
 
 export const FULL_RANGE = [21, 108]; // A0..C8, the 88 keys
 export const LOOKAHEAD_SEC = 4; // song seconds between a note appearing and its key
+// «Notas a la vista»: how many seconds of the song the lane shows, 1-20. More
+// seconds: the notes fall slower and closer together (more of what is coming
+// is on screen); fewer: they fall faster, spread out (fast passages).
+export const AHEAD_MIN = 1;
+export const AHEAD_MAX = 20;
+const AHEAD_STEPS = 100; // the slider's 0-100, on a log scale: 1 s to 2 s is as wide as 10 s to 20 s
+
+/** Seconds within the range (a non-number is the default). */
+export function clampAhead(sec) {
+  const s = Number(sec);
+  if (!Number.isFinite(s) || s <= 0) return LOOKAHEAD_SEC;
+  return Math.min(AHEAD_MAX, Math.max(AHEAD_MIN, s));
+}
+
+/** The slider's position (0-100) for `sec`, and back. */
+export function sliderFromAhead(sec) {
+  return Math.round((AHEAD_STEPS * Math.log(clampAhead(sec) / AHEAD_MIN)) / Math.log(AHEAD_MAX / AHEAD_MIN));
+}
+export function aheadFromSlider(v) {
+  const x = Math.min(AHEAD_STEPS, Math.max(0, Number(v) || 0)) / AHEAD_STEPS;
+  return Math.round(AHEAD_MIN * (AHEAD_MAX / AHEAD_MIN) ** x * 10) / 10;
+}
+
+/** "4 s", "2,5 s": as the lane's label shows it. */
+export function aheadLabel(sec) {
+  const s = clampAhead(sec);
+  return `${(s < 10 ? Math.round(s * 10) / 10 : Math.round(s)).toString().replace(".", ",")} s`;
+}
 const BLACK = new Set([1, 3, 6, 8, 10]);
 // Where a black key sits over the boundary between its two white keys, as a
 // fraction of a white key: C#/D# lean left/right of centre, F#/G#/A# likewise.
@@ -120,10 +148,32 @@ const COLORS = {
   right: { bar: "#4f9dff", lit: "#4f9dff", text: "#ffffff", hi: "#a9cdff", lo: "#2a6ed1", glow: "79,157,255" },
   left: { bar: "#3ecf8e", lit: "#3ecf8e", text: "#0b1f16", hi: "#9cf0c9", lo: "#219461", glow: "62,207,142" },
 };
+export const HAND_COLORS = { R: COLORS.right.bar, L: COLORS.left.bar };
 
-export function barColor(note, mode = "one") {
+/** A bar's colours from one base colour (#rrggbb): lighter edge, darker
+ *  side, its glow, and dark or white text, whichever reads on it. */
+export function paletteFrom(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
+  if (!m) return null;
+  const v = parseInt(m[1], 16);
+  const rgb = [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  const mix = (to, k) => `#${rgb.map((c) => Math.round(c + (to - c) * k).toString(16).padStart(2, "0")).join("")}`;
+  const lum = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255;
+  return { bar: `#${m[1]}`, lit: `#${m[1]}`, text: lum > 0.6 ? "#111111" : "#ffffff", hi: mix(255, 0.45), lo: mix(0, 0.3), glow: rgb.join(",") };
+}
+
+/** The hand a bar is drawn in: the one the user set wins over the staff it
+ *  was engraved on (an edit shows before the server's answer). */
+export function handOf(note) {
+  if (note.hand === "L" || note.hand === "R") return note.hand;
+  return note.staff === 2 ? "L" : "R";
+}
+
+export function barColor(note, mode = "one", palette = null, paint = null) {
   if (mode !== "hands") return COLORS.one;
-  return note.staff === 2 || note.hand === "L" ? COLORS.left : COLORS.right;
+  const h = paint && paint.ids.has(note.id) ? paint.hand || handOf({ ...note, hand: null }) : handOf(note);
+  if (h === "L") return palette?.L || COLORS.left;
+  return palette?.R || COLORS.right;
 }
 
 export class FallView {
@@ -135,7 +185,8 @@ export class FallView {
     this.ctx = this.canvas.getContext("2d");
     this.notes = [];
     // lookahead: song seconds on screen above the keys (Anticipación);
-    // dimStaff: the staff drawn faint (the hand the player does not play).
+    // dimStaff: the staff drawn faint and outlined dashed: the hand silenced
+    // («Silenciar», the player plays it).
     this.opts = { keys: "song", colors: "one", names: "letters", style: "3d", lookahead: LOOKAHEAD_SEC, dimStaff: 0 };
     this.measures = []; // [{number, start, end, meter}]: bar lines across the lane
     this.loop = null; // {a, b, on}: the practice loop, marked on the lane
@@ -150,6 +201,9 @@ export class FallView {
     // "user" | "auto"}, drawn on the bars and on the keys when present.
     this.fingers = null;
     this.preview = null; // {ids: Set, semis, sec}: notes being dragged
+    this.palette = null; // {R, L}: the hands' colours when the user chose their own
+    this.paint = null; // «Corregir manos»: {hand, ids} being painted
+    this.marks = false; // dot on notes whose hand the user set
     this.hits = []; // [{id, x, y, w, h}] of the last frame, for taps
     this.size = { w: 0, h: 0 };
     new ResizeObserver(() => this.resize()).observe(host);
@@ -202,6 +256,37 @@ export class FallView {
   setSelection(ids) {
     this.selection = ids;
     this.redraw();
+  }
+
+  /** Bar colours of each hand ({R: "#rrggbb", L: ...}; null = defaults). */
+  setHandColors(colors) {
+    this.palette = colors ? { R: paletteFrom(colors.R) || COLORS.right, L: paletteFrom(colors.L) || COLORS.left } : null;
+    this.redraw();
+  }
+
+  /** «Corregir manos»: notes being painted ({hand: "R"|"L"|null, ids: Set})
+   *  are drawn in the hand they will get; `marks` shows which notes have a
+   *  hand set by the user (a dot), only while painting. */
+  setPaint(paint, marks = false) {
+    this.paint = paint;
+    this.marks = marks;
+    this.redraw();
+  }
+
+  colorOf(note) {
+    return barColor(note, this.opts.colors, this.palette, this.paint);
+  }
+
+  /** The notes along a stroke from one point to another (client
+   *  coordinates), sampled every few pixels so a quick drag misses none. */
+  hitsAlong(x0, y0, x1, y1) {
+    const out = new Set();
+    const steps = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 4));
+    for (let i = 0; i <= steps; i++) {
+      const id = this.hitTest(x0 + ((x1 - x0) * i) / steps, y0 + ((y1 - y0) * i) / steps);
+      if (id) out.add(id);
+    }
+    return out;
   }
 
   setPreview(preview) {
@@ -380,7 +465,7 @@ export class FallView {
     for (const b of bars) {
       const key = byMidi.get(b.note.midi);
       if (!key) continue;
-      const color = barColor(b.note, this.opts.colors);
+      const color = this.colorOf(b.note);
       const x = key.x * unit + 1;
       const bw = Math.max(2, key.w * unit - 2);
       const yBottom = fallH - Math.max(0, b.y0) * fallH;
@@ -391,11 +476,13 @@ export class FallView {
       roundRect(g, x, yBottom - bh, bw, bh, Math.min(5, bw / 3));
       g.fill();
       g.globalAlpha = 1;
+      if (this.muted(b.note)) mutedOutline(g, color);
       if (this.selection.has(b.note.id)) {
         g.strokeStyle = "#ffffff";
         g.lineWidth = 3;
         g.stroke();
       }
+      if (this.marks && b.note.hand) handMark(g, x + bw / 2, yBottom - bh + 6, Math.min(4, bw / 4));
       this.hits.push({ id: b.note.id, x, y: yBottom - bh, w: bw, h: bh });
       const fing = this.fingerOf(b.note);
       let labelY = yBottom - 3;
@@ -489,7 +576,7 @@ export class FallView {
     for (const b of bars) {
       const key = byMidi.get(b.note.midi);
       if (!key) continue;
-      const color = barColor(b.note, this.opts.colors);
+      const color = this.colorOf(b.note);
       const kw = key.w * unit;
       const bw = Math.max(3, key.black ? kw * 0.92 : kw * 0.84);
       const x = key.x * unit + (kw - bw) / 2;
@@ -505,14 +592,21 @@ export class FallView {
       g.fillStyle = body;
       roundRect(g, x, yBottom - bh, bw, bh, r);
       g.fill();
-      g.strokeStyle = b.sounding ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.35)";
-      g.lineWidth = b.sounding ? 1.5 : 1;
-      g.stroke();
+      if (this.muted(b.note)) {
+        g.globalAlpha = 1;
+        mutedOutline(g, color);
+        g.globalAlpha = this.fade(b.note);
+      } else {
+        g.strokeStyle = b.sounding ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.35)";
+        g.lineWidth = b.sounding ? 1.5 : 1;
+        g.stroke();
+      }
       if (this.selection.has(b.note.id)) {
         g.strokeStyle = "#ffffff";
         g.lineWidth = 3;
         g.stroke();
       }
+      if (this.marks && b.note.hand) handMark(g, x + bw / 2, yBottom - bh + 6, Math.min(4, bw / 4));
       g.globalAlpha = 1;
       this.hits.push({ id: b.note.id, x, y: yBottom - bh, w: bw, h: bh });
       const fing = this.fingerOf(b.note);
@@ -615,11 +709,15 @@ export class FallView {
     }
   }
 
-  /** How strongly a note is drawn: faint on the hand the player leaves to
-   *  the playback (dimStaff). */
+  /** How strongly a note is drawn: faint on the silenced hand (dimStaff). */
   fade(note) {
+    return this.muted(note) ? 0.32 : 1;
+  }
+
+  /** On the silenced hand («Silenciar»): it does not sound, the player plays it. */
+  muted(note) {
     const staff = note.staff === 2 || (note.staff == null && note.hand === "L") ? 2 : 1;
-    return this.opts.dimStaff && staff === this.opts.dimStaff ? 0.28 : 1;
+    return !!this.opts.dimStaff && staff === this.opts.dimStaff;
   }
 
   barNumber(g, number, x, y, size) {
@@ -772,7 +870,7 @@ export class FallView {
     for (const b of bars) {
       const key = byMidi.get(b.note.midi);
       if (!key) continue;
-      const color = barColor(b.note, this.opts.colors);
+      const color = this.colorOf(b.note);
       const u0 = Math.max(0, b.y0);
       const u1 = Math.min(1, b.y1);
       const x0 = key.x * unit + 1.5;
@@ -796,6 +894,7 @@ export class FallView {
       quad(g, bl, yb, br, yb, tr, yt, tl, yt);
       g.fill();
       g.globalAlpha = 1;
+      if (this.muted(b.note)) mutedOutline(g, color);
       const capH = Math.max(2, (yb - yt) > 10 ? 3 * depthScale(u1) + 1 : 1);
       g.fillStyle = "rgba(255,255,255,0.45)";
       quad(g, tl, yt + capH, tr, yt + capH, tr, yt, tl, yt);
@@ -806,6 +905,7 @@ export class FallView {
         quad(g, bl, yb, br, yb, tr, yt, tl, yt);
         g.stroke();
       }
+      if (this.marks && b.note.hand) handMark(g, (tl + tr) / 2, yt + 6, Math.min(4, (tr - tl) / 4));
       const left = Math.min(bl, tl), right = Math.max(br, tr);
       this.hits.push({ id: b.note.id, x: left, y: yt, w: right - left, h: yb - yt });
       const bw = br - bl;
@@ -840,7 +940,7 @@ export class FallView {
       if (!b.sounding || this.sounding.has(b.note.id) || b.y0 < -0.06) continue;
       const key = byMidi.get(b.note.midi);
       if (!key) continue;
-      const color = barColor(b.note, this.opts.colors);
+      const color = this.colorOf(b.note);
       const x = (key.x + key.w / 2) * unit;
       for (let i = 0; i < 14 && this.sparks.length < 400; i++) {
         const a = -Math.PI / 2 + (Math.random() - 0.5) * 1.6;
@@ -977,6 +1077,29 @@ export function gridLines(measures, t, win = LOOKAHEAD_SEC) {
     }
   }
   return out;
+}
+
+/** The dot on a note whose hand the user set («Corregir manos»). */
+function handMark(g, x, y, r) {
+  if (r < 1.5) return;
+  g.beginPath();
+  g.arc(x, y, r, 0, Math.PI * 2);
+  g.fillStyle = "#ffffff";
+  g.fill();
+  g.lineWidth = 1;
+  g.strokeStyle = "rgba(0,0,0,0.55)";
+  g.stroke();
+}
+
+/** The outline of a note on the silenced hand: dashed, in the hand's colour
+ *  (the current path is the bar). Faint fill + dashes = "not sounding". */
+function mutedOutline(g, color) {
+  g.save();
+  g.setLineDash([5, 4]);
+  g.lineWidth = 1.5;
+  g.strokeStyle = color.hi || color.bar;
+  g.stroke();
+  g.restore();
 }
 
 /** A finger number in a disc: white when printed on the score or set by hand

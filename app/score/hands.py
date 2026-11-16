@@ -1,174 +1,328 @@
-"""Which hand plays each note, followed through time.
+"""Which hand plays each note: a small bidirectional GRU, run in numpy.
 
-A fixed split point (every note from middle C up goes to the treble staff)
-breaks on accompaniment that climbs: in Yann Tiersen's Comptine the left hand
-arpeggiates D3-F#3-B3-D4-E4 under a right-hand melody starting around G4, and
-a split at C4 sent the arpeggio's top notes up to the treble staff, where a
-pianist would never read them.
+The rules used before (the left hand's reach from its bass, the right hand's
+melodic line) were barely better than a fixed split at middle C: 88.7 %
+against 87.0 % on the songs whose hands are known (falling-notes videos, the
+Chopin nocturne's printed staves; scripts/score/hands_data.py), and 83.0 %
+against 79.5 % on hannds. Pitch and time alone leave real ambiguity -- an
+inner D#4 between a G#3 bass and an F4 melody can be either hand -- so the
+published answer is a model that reads the whole passage both ways:
 
-What defines the left hand is its reach from its own bass. Its floor is the
-lowest note it played in the last FLOOR_SEC; a group's lowest note is the left
-hand's when it lies within reach of that floor (SPAN semitones, a ninth plus),
-and then the hand sits on it and takes everything it reaches above it. The
-right hand takes the rest, and the top note of a group when it carries on the
-right hand's line (melodic continuity). Within a group the left hand always
-has the lower notes. Hands that are idle stay out of the way: with no left
-hand for a while, a high group belongs to the right hand, and the other way
-round. Measuring reach from a floor, not from the previous note, keeps a lone
-melody from climbing into the left hand one step at a time.
+  Hadjakos, Waloschek & Leemhuis, "Detecting Hands in Piano MIDI Data"
+  (MuC 2019): a bidirectional GRU, 94.5 % on 122 pieces recorded with each
+  hand on its own keyboard (the hannds dataset, MIT licence,
+  github.com/cemfi/hannds), against 92.2 % for a bidirectional Kalman filter.
 
-(A first version followed each hand's average register; it split the left
-hand's arpeggio in two -- bass in one hand, its upper notes in the other.)
+This one is trained on hannds (scripts/score/train_hands.py) with
+transcription-like noise (dropped notes, octave ghosts, timing jitter,
+transposition, tempo) and per note it reads: pitch, the gaps to the previous
+and next onset, its length, velocity, and where it sits in its chord.
+Additions for the editor:
 
-Deterministic: same notes, same hands. A note the user moved with H keeps its
-hand.
+* Hints: a hand the user set is an input, not only an override (the model
+  was trained with some notes' hands revealed, among them its own mistakes).
+* Propagation: a correction pulls the same key nearby along (propagate()).
+* Chord consistency: within one onset the left hand always takes the lower
+  notes (the best split of each chord by the model's probabilities), and a
+  hand the user set is always kept.
+
+Measured (scripts/score/hands_benchmark.py): 96.0 % on the known songs
+(TURiSTA 92.6, Y dime 99.4, Nature of Daylight 93.1, BAILE INoLVIDABLE 97.6,
+nocturne 96.9), and 97.0 % on the 12 hannds pieces held out of training (the
+split: 78.1 %). Deterministic: same notes, same hands.
+Without the weights file it falls back to the split point.
 """
 
 from __future__ import annotations
 
-GROUP_SEC = 0.035
-SPAN = 14  # semitones the left hand reaches above its bass
-SHIFT = 2  # how far above its floor's reach the hand may have moved meanwhile
-FLOOR_SEC = 2.0  # how far back the left hand's floor looks
-MELODY_SEC = 0.7  # quarters at ~90 BPM; longer windows stole accompaniment notes
-MELODY_STEP = 4  # semitones: a step that continues the right hand's line
-MELODY_MIN_ABOVE_BASS = 7
-IDLE_SEC = 2.0
-# A broken chord spread to a tenth (B2-F#3-B3-D#4 in Porz Goret) is still the
-# left hand's when its top lies well below everything the right hand is
-# playing; the plain reach would send the D#4 up to the treble staff.
-REACH_EXTRA = 3  # semitones beyond SPAN
-BELOW_RIGHT = 7  # semitones (a fifth) under the right hand's lowest recent note
-RIGHT_SEC = 1.5  # how far back "recent" looks for the right hand
-REPEAT_SEC = 2.0  # ...and only for a pitch the left hand itself played this recently
+import hashlib
+import json
+from functools import lru_cache
+from pathlib import Path
+
+import numpy as np
+
+MODEL_PATH = Path(__file__).parent / "models" / "hands_gru.npz"
+GROUP_SEC = 0.035  # onsets this close are one chord
+N_FEAT = 10
+# The sequence is cut into windows run as one batch: a Python loop over 3000
+# notes one by one took 0.4 s; context on both sides keeps every note's
+# reading the same as on the whole sequence (benchmarked).
+CORE = 256
+CONTEXT = 96
+FORCED = 50.0  # log-probability cost of contradicting a hand the user set
+# Log-odds for the hand on the split point's side. 0.5 only decides what the
+# model leaves even (known songs 95.94 -> 95.97 %, held-out hannds 97.11 ->
+# 97.03; 0.25 was +0.05 on both but left C4-D4-E4-F4 alone to the left hand).
+SPLIT_PRIOR = 0.5
+PROPAGATE = 10.0  # log-odds a correction adds to the same key next to it...
+PROPAGATE_SEC = 4.0  # ...fading to nothing this far away (benchmarked: 3-4 s)
+# One hand cannot hold keys further apart than a ninth: a note the model
+# leaves undecided (a G3 topping a left-hand arpeggio while the right hand
+# holds C5+C6) goes to the hand that can reach it. A note's "held" time is
+# capped, as the pedal makes notes ring after the key is up. Measured: known
+# songs 95.5 -> 95.9 %, held-out hannds 96.9 -> 97.1 % (on another training,
+# reach 12-14 all gave the same; 16 less).
+REACH = 14
+REACH_COST = 4.0
+HELD_MAX_SEC = 1.0
 
 
-def _groups(notes: list[dict]) -> list[list[dict]]:
-    ordered = sorted(notes, key=lambda n: (n["start"], n["midi"]))
-    groups: list[list[dict]] = []
-    for n in ordered:
-        if groups and n["start"] - groups[-1][0]["start"] <= GROUP_SEC:
-            groups[-1].append(n)
-        else:
-            groups.append([n])
-    return groups
+@lru_cache(maxsize=1)
+def _weights() -> dict[str, np.ndarray] | None:
+    if not MODEL_PATH.exists():
+        return None
+    with np.load(MODEL_PATH) as z:
+        return {k: z[k].astype(np.float32) for k in z.files}
 
 
-def _reaches(
-    midi: int, ref: int, span: int, right_low: int | None, repeated: set[int], split: int
-) -> bool:
-    """Within span of ref, or a little further (a tenth) for a pitch of the
-    left hand's own figure while the right hand is busy well above it (a new
-    melody note there is not a repeat). Up to middle C and well under the right
-    hand, a note is the left hand's whatever the reach: it has moved up from a
-    deep bass octave."""
-    if midi - ref <= span:
-        return True
-    if right_low is None or midi > right_low - BELOW_RIGHT:
-        return False
-    return midi <= split or (midi in repeated and midi - ref <= span + REACH_EXTRA)
+def available() -> bool:
+    return _weights() is not None
+
+
+@lru_cache(maxsize=1)
+def model_version() -> str | None:
+    """The weights file's sha1 (12 hex), logged with each user correction."""
+    if not MODEL_PATH.exists():
+        return None
+    return hashlib.sha1(MODEL_PATH.read_bytes()).hexdigest()[:12]
+
+
+def _order(notes: list[dict]) -> list[int]:
+    return sorted(range(len(notes)), key=lambda i: (notes[i]["start"], notes[i]["midi"]))
+
+
+def features(notes: list[dict], idx: list[int]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Notes in `idx` order -> (key index 0..87, features [N, N_FEAT], chord id).
+
+    Must match the training script's features exactly."""
+    n = len(idx)
+    midi = np.array([notes[i]["midi"] for i in idx], dtype=np.float32)
+    st = np.array([notes[i]["start"] for i in idx], dtype=np.float64)
+    en = np.array([notes[i]["end"] for i in idx], dtype=np.float64)
+    vel = np.array([notes[i].get("velocity") or 80 for i in idx], dtype=np.float32)
+    hint = np.array(
+        [{"R": 1.0, "L": -1.0}.get(notes[i].get("hand"), 0.0) for i in idx], dtype=np.float32
+    )
+    gid = np.zeros(n, dtype=np.int64)
+    g, g0 = 0, st[0]
+    for k in range(1, n):
+        if st[k] - g0 > GROUP_SEC:
+            g += 1
+            g0 = st[k]
+        gid[k] = g
+    ng = g + 1
+    gmin = np.full(ng, 200.0, dtype=np.float32)
+    gmax = np.full(ng, -1.0, dtype=np.float32)
+    gsize = np.zeros(ng, dtype=np.float32)
+    np.minimum.at(gmin, gid, midi)
+    np.maximum.at(gmax, gid, midi)
+    np.add.at(gsize, gid, 1)
+    first = np.r_[0, np.flatnonzero(np.diff(gid)) + 1]
+    gst = st[first]
+    dprev = np.r_[2.0, np.diff(gst)]
+    dnext = np.r_[np.diff(gst), 2.0]
+    X = np.zeros((n, N_FEAT), dtype=np.float32)
+    X[:, 0] = (midi - 64) / 20
+    X[:, 1] = np.log1p(np.clip(dprev[gid], 0, 8) / 0.05) / 4
+    X[:, 2] = np.log1p(np.clip(dnext[gid], 0, 8) / 0.05) / 4
+    X[:, 3] = np.log1p(np.clip(en - st, 0, 8) / 0.1) / 4
+    X[:, 4] = vel / 127
+    X[:, 5] = (midi - gmin[gid]) / 12
+    X[:, 6] = (gmax[gid] - midi) / 12
+    X[:, 7] = np.minimum(gsize[gid], 8) / 4
+    X[:, 8] = (np.r_[1, np.diff(gid)] > 0).astype(np.float32)
+    X[:, 9] = hint
+    keys = np.clip(midi.astype(np.int64) - 21, 0, 87)
+    return keys, X, gid
+
+
+def _sigmoid(x: np.ndarray) -> np.ndarray:
+    return 1 / (1 + np.exp(-x))
+
+
+def _gru(x: np.ndarray, w: dict, name: str, reverse: bool) -> np.ndarray:
+    """One GRU direction over a batch [B, T, in] (PyTorch gate order r, z, n)."""
+    wih, whh = w[f"rnn.weight_ih_{name}"], w[f"rnn.weight_hh_{name}"]
+    bih, bhh = w[f"rnn.bias_ih_{name}"], w[f"rnn.bias_hh_{name}"]
+    b, t_len, _ = x.shape
+    h_size = whh.shape[1]
+    gi = x @ wih.T + bih
+    whh_t = np.ascontiguousarray(whh.T)
+    h = np.zeros((b, h_size), dtype=np.float32)
+    out = np.empty((b, t_len, h_size), dtype=np.float32)
+    steps = range(t_len - 1, -1, -1) if reverse else range(t_len)
+    for t in steps:
+        gh = h @ whh_t + bhh
+        g = gi[:, t]
+        r = _sigmoid(g[:, :h_size] + gh[:, :h_size])
+        z = _sigmoid(g[:, h_size : 2 * h_size] + gh[:, h_size : 2 * h_size])
+        c = np.tanh(g[:, 2 * h_size :] + r * gh[:, 2 * h_size :])
+        h = (1 - z) * c + z * h
+        out[:, t] = h
+    return out
+
+
+def _forward(w: dict, keys: np.ndarray, X: np.ndarray) -> np.ndarray:
+    """P(right hand) per note, the sequence cut into overlapping windows."""
+    n = len(keys)
+    starts = list(range(0, n, CORE))
+    span = min(n, CORE + 2 * CONTEXT)
+    xb = np.zeros((len(starts), span, X.shape[1] + w["emb.weight"].shape[1]), dtype=np.float32)
+    lo_of = []
+    for j, s in enumerate(starts):
+        lo = max(0, min(s - CONTEXT, n - span))
+        lo_of.append(lo)
+        xb[j] = np.concatenate([w["emb.weight"][keys[lo : lo + span]], X[lo : lo + span]], 1)
+    # Windows that run past the sequence's end are padded at the end; the
+    # windows are placed so none needs padding (lo <= n - span).
+    x = xb
+    for layer in range(2):
+        f = _gru(x, w, f"l{layer}", False)
+        b = _gru(x, w, f"l{layer}_reverse", True)
+        x = np.concatenate([f, b], 2)
+    z = (x @ w["out.weight"].T + w["out.bias"])[:, :, 0]
+    p = np.empty(n, dtype=np.float32)
+    for j, s in enumerate(starts):
+        e = min(n, s + CORE)
+        lo = lo_of[j]
+        p[s:e] = _sigmoid(z[j, s - lo : e - lo])
+    return p
+
+
+def _split(notes: list[dict], split: int) -> dict[str, str]:
+    return {
+        n["id"]: n["hand"] if n.get("hand") in ("L", "R") else ("R" if n["midi"] >= split else "L")
+        for n in notes
+    }
+
+
+def _digest(notes: list[dict]) -> str:
+    rows = sorted(
+        (
+            n["id"],
+            n["midi"],
+            round(n["start"], 4),
+            round(n["end"], 4),
+            n.get("velocity"),
+            n.get("hand"),
+        )
+        for n in notes
+    )
+    return hashlib.sha1(json.dumps(rows).encode()).hexdigest()
+
+
+_CACHE: dict[str, dict[str, str]] = {}
+
+
+def probabilities(notes: list[dict]) -> dict[str, float]:
+    """note id -> P(right hand) from the model (hands set by the user are hints)."""
+    w = _weights()
+    if w is None or not notes:
+        return {}
+    idx = _order(notes)
+    keys, X, _ = features(notes, idx)
+    p = _forward(w, keys, X)
+    return {notes[i]["id"]: float(p[k]) for k, i in enumerate(idx)}
 
 
 def assign_hands(notes: list[dict], split: int = 60) -> dict[str, str]:
-    """note id -> "L" | "R"."""
-    out: dict[str, str] = {}
-    left: list[dict] = []  # left-hand notes, for the bass reference
-    last = {"L": float("-inf"), "R": float("-inf")}
-    right_last: tuple[float, int] | None = None
-    right: list[tuple[float, int]] = []  # (start, midi) of right-hand notes
-    right_floor: int | None = None
-    left_played: list[tuple[float, int]] = []  # (start, midi), REPEAT_SEC back
-    last_floor: int | None = None
-
-    for group in _groups(notes):
-        t = group[0]["start"]
-        pitches = sorted(group, key=lambda n: n["midi"])
-        fixed = {n["id"]: n["hand"] for n in group if n.get("hand") in ("L", "R")}
-
-        left = [n for n in left if t - n["start"] <= FLOOR_SEC]
-        lowest = pitches[0]["midi"]
-        right = [r for r in right if t - r[0] <= RIGHT_SEC]
-        left_played = [p for p in left_played if t - p[0] <= REPEAT_SEC]
-        repeated = {m for _, m in left_played}
-        # Like the floor: a right hand that has not played lately is still
-        # where its last group was.
-        right_marks = [m for _, m in right] + ([right_floor] if right_floor is not None else [])
-        right_low = min(right_marks) if right_marks else None
-
-        ctx = (right_low, repeated, split)
-        # A hand that has not played lately is still where it last was: a held
-        # whole note in the bass must not leave the left hand without a floor
-        # 2 s later (it let the melody in, on human timing).
-        # Also the lowest note of its last group: a time window can cut a chord
-        # in half (on human timing only the top of D3-F3-A3 was still inside it,
-        # which raised the floor to A3 and let a melody A4 in).
-        recent = [n["midi"] for n in left] + ([last_floor] if last_floor is not None else [])
-        floor = min(recent) if recent else None
-        # Known limit: an arpeggio climbing far above a deep bass (G2 then
-        # G3-B3-D4) can lose its top notes to the right hand. Following the
-        # left hand's own line fixes that but steals a melody that starts a
-        # third above the arpeggio's top; pitch and time alone cannot tell
-        # them apart, so H (move to the other hand) is the remedy.
-        lowest_is_left = floor is None or _reaches(lowest, floor, SPAN, *ctx)
-        bass = lowest if lowest_is_left else floor
-
-        left_idle = t - last["L"] > IDLE_SEC
-        right_idle = t - last["R"] > IDLE_SEC
-        if left_idle and not left and lowest >= split:
-            k = 0  # nothing low going on: a passage for the right hand alone
-        elif right_idle and pitches[-1]["midi"] < split:
-            k = len(pitches)  # all low, right hand resting
-        elif not lowest_is_left:
-            k = 0  # beyond the left hand's reach from where it has been
-        else:
-            k = 0
-            for n in pitches:
-                # Within reach of where the hand sits now, and not far above
-                # where it has been: the first melody note sounding with an
-                # arpeggio's top must not ride along into the left hand.
-                if _reaches(n["midi"], bass, SPAN, *ctx) and (
-                    floor is None or _reaches(n["midi"], floor, SPAN + SHIFT, *ctx)
-                ):
-                    k += 1
-                else:
-                    break
-            # The top note carries on the right hand's line: give it back.
-            top = pitches[-1]["midi"]
-            if (
-                k == len(pitches)
-                and len(pitches) >= 1
-                and right_last is not None
-                and t - right_last[0] <= MELODY_SEC
-                and abs(top - right_last[1]) <= MELODY_STEP
-                and top - bass >= MELODY_MIN_ABOVE_BASS
-                and top >= split
-            ):
-                k = len(pitches) - 1
-
-        # The user's own moves win; keep the left hand below the right.
-        for i, n in enumerate(pitches):
-            if fixed.get(n["id"]) == "R":
-                k = min(k, i)
-        for i, n in enumerate(pitches):
-            if fixed.get(n["id"]) == "L":
-                k = max(k, i + 1)
-
-        for i, n in enumerate(pitches):
-            hand = fixed.get(n["id"]) or ("L" if i < k else "R")
-            out[n["id"]] = hand
-            last[hand] = t
-            if hand == "L":
-                left.append(n)
-                left_played.append((t, n["midi"]))
-            else:
-                right.append((t, n["midi"]))
-        if k < len(pitches):
-            right_last = (t, pitches[-1]["midi"])
-        left_now = [n["midi"] for n in pitches if out[n["id"]] == "L"]
-        if left_now:
-            last_floor = min(left_now)
-        right_now = [n["midi"] for n in pitches if out[n["id"]] == "R"]
-        if right_now:
-            right_floor = min(right_now)
+    """note id -> "L" | "R". A note's own "hand" (set by the user) is kept."""
+    w = _weights()
+    if w is None or not notes:
+        return _split(notes, split)
+    key = _digest(notes)
+    if key in _CACHE:
+        return _CACHE[key]
+    if all(n.get("hand") in ("L", "R") for n in notes):  # a falling-notes video
+        out = {n["id"]: n["hand"] for n in notes}
+    else:
+        idx = _order(notes)
+        keys, X, gid = features(notes, idx)
+        p = _forward(w, keys, X)
+        # The split point breaks ties: a melody alone around middle C, which
+        # the model leaves near 0.5, reads as the right hand's.
+        logit = np.log(np.clip(p, 1e-6, 1) / np.clip(1 - p, 1e-6, 1))
+        logit += SPLIT_PRIOR * np.where(keys + 21 >= split, 1.0, -1.0)
+        p = propagate(notes, idx, 1 / (1 + np.exp(-logit)))
+        out = decode(notes, idx, gid, p)
+    if len(_CACHE) > 32:
+        _CACHE.clear()
+    _CACHE[key] = out
     return out
 
+
+def propagate(notes: list[dict], idx: list[int], p_right: np.ndarray) -> np.ndarray:
+    """A key the user put in one hand pulls the same key nearby (PROPAGATE_SEC
+    either side, fading with the distance) towards that hand.
+
+    The model reads the user's hands too, but a correction moves few of its
+    neighbours by itself; a note repeated on one key (a 55 struck again and
+    again, an inner voice) was what kept going wrong after its first fix.
+    Measured by playing a user who corrects the earliest wrong note until none
+    is left, on the songs with known hands: 269 errors took 247 corrections
+    with the model's hints alone, 196 with this (267 -> 201 with the split
+    point's tie-break) (other trainings of the same
+    model: 279 -> 251, 265 -> 213). Neighbouring keys as well made it worse: a
+    semitone away is often the other hand's line. It can also pull a note the
+    model had right (Für Elise, held out: 55 errors, 80 corrections)."""
+    fixed = [(k, notes[i]["hand"]) for k, i in enumerate(idx) if notes[i].get("hand") in ("L", "R")]
+    if not fixed:
+        return p_right
+    p = np.clip(p_right.astype(np.float64), 1e-6, 1 - 1e-6)
+    logit = np.log(p / (1 - p))
+    starts = np.array([notes[i]["start"] for i in idx])
+    midi = np.array([notes[i]["midi"] for i in idx])
+    by_key: dict[int, np.ndarray] = {}
+    for k, hand in fixed:
+        m = int(midi[k])
+        if m not in by_key:
+            by_key[m] = np.flatnonzero(midi == m)
+        same = by_key[m]
+        near = np.clip(1 - np.abs(starts[same] - starts[k]) / PROPAGATE_SEC, 0, None)
+        logit[same] += (PROPAGATE if hand == "R" else -PROPAGATE) * near
+    return 1 / (1 + np.exp(-logit))
+
+
+def decode(
+    notes: list[dict], idx: list[int], gid: np.ndarray, p_right: np.ndarray
+) -> dict[str, str]:
+    """Hands from P(right) per note (in `idx` order), one chord at a time."""
+    p = np.clip(p_right.astype(np.float64), 1e-6, 1 - 1e-6)
+    log_r, log_l = np.log(p), np.log(1 - p)
+    out: dict[str, str] = {}
+    held: dict[str, list[tuple[float, int]]] = {"L": [], "R": []}  # (until, midi)
+    k0 = 0
+    n = len(idx)
+    while k0 < n:
+        k1 = k0
+        while k1 < n and gid[k1] == gid[k0]:
+            k1 += 1
+        chord = sorted(range(k0, k1), key=lambda k: notes[idx[k]]["midi"])
+        fixed = [notes[idx[k]].get("hand") for k in chord]
+        pitch = [notes[idx[k]]["midi"] for k in chord]
+        t = notes[idx[chord[0]]]["start"]
+        for h in held:
+            held[h] = [x for x in held[h] if x[0] > t + 0.02]
+        # The lowest `cut` notes go to the left hand: the cut the model
+        # likes best, never against a hand the user set, and with each hand
+        # within reach of the keys it still holds down.
+        best, cut = -np.inf, 0
+        for c in range(len(chord) + 1):
+            s = float(log_l[chord[:c]].sum() + log_r[chord[c:]].sum())
+            s -= FORCED * sum(
+                1 for q, h in enumerate(fixed) if (h == "L" and q >= c) or (h == "R" and q < c)
+            )
+            for h, mine in (("L", pitch[:c]), ("R", pitch[c:])):
+                keys = mine + [m for _, m in held[h]]
+                if mine and max(keys) - min(keys) > REACH:
+                    s -= REACH_COST
+            if s > best:
+                best, cut = s, c
+        for q, k in enumerate(chord):
+            note = notes[idx[k]]
+            hand = fixed[q] if fixed[q] in ("L", "R") else ("L" if q < cut else "R")
+            out[note["id"]] = hand
+            held[hand].append((min(note["end"], note["start"] + HELD_MAX_SEC), note["midi"]))
+        k0 = k1
+    return out
