@@ -45,6 +45,8 @@ async function startImport(page) {
   await page.locator(".cat-item").first().waitFor({ timeout: 20000 });
   await page.locator("#url").fill("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
   await page.locator("#submit").click();
+  // A new link asks what it is (job.js askAudioKind): a song, separated.
+  await page.locator(".audio-kind-song").click();
   await queue.run();
   return queue;
 }

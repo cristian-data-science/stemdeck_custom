@@ -233,6 +233,49 @@ def _run_demucs(job: Job, source: Path, job_dir: Path, device: str) -> tuple[int
     return (0, tail) if job_ok else (1, tail)
 
 
+def _piano_as_is(job: Job, source: Path, job_dir: Path) -> Path:
+    """A solo piano recording, imported as such: nothing to separate. Its one
+    stem "piano" is the audio itself, as the WAV a separation writes (16-bit,
+    44.1 kHz, stereo), where collect() expects it. The piano score and its
+    Pianoteq audio follow as for any song with a piano (runner._run_async).
+
+    Separating it would only lose quality: Demucs splits a solo piano between
+    "piano" and "other", and the piano model transcribes the original better
+    (app/score/engines.choose_audio)."""
+    from app.core.config import TIMEOUT_FFMPEG, ffmpeg_executable
+    from app.pipeline.cancel import run_registered
+
+    _set(job, status="separating", progress=0.0, stage="Solo piano: no separation...")
+    job.compute_device = "none"
+    out = job_dir / DEMUCS_MODEL / source.stem
+    out.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        ffmpeg_executable(),
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-i",
+        str(source),
+        "-vn",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+        "-c:a",
+        "pcm_s16le",
+        "-y",
+        str(out / "piano.wav"),
+    ]
+    result = run_registered(job, cmd, TIMEOUT_FFMPEG)
+    if job.cancel_requested:
+        raise JobCancelled()
+    if result.returncode != 0:
+        tail = result.stderr.decode("utf-8", errors="replace").strip().splitlines()[-10:]
+        raise SeparationError("could not prepare the piano audio", tail=tail, device="none")
+    _set(job, progress=1.0)
+    return out
+
+
 def _separate_roformer(job: Job, source: Path, job_dir: Path) -> Path:
     """BS-RoFormer SW (experimental, chosen at import): the six stems where
     collect() expects Demucs' (and cleans them up the same way)."""
@@ -262,6 +305,8 @@ def separate(job: Job, source: Path, job_dir: Path) -> Path:
     It applies even when the user forced cuda/mps in Settings -- a dead job
     with no diagnostics is strictly worse for them than a slow one that
     explains itself."""
+    if job.separator == "none":
+        return _piano_as_is(job, source, job_dir)
     _set(job, status="separating", progress=0.0, stage="Separating stems...")
     if job.separator == "roformer":
         return _separate_roformer(job, source, job_dir)

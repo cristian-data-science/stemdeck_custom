@@ -330,6 +330,8 @@ test.describe("the work a soundtrack is from", () => {
 
     await page.locator("#url").fill("https://www.youtube.com/watch?v=6Nn8rBmhDjE");
     await page.locator("#submit").click();
+    // A new link asks what it is (job.js askAudioKind): a song, separated.
+    await page.locator(".audio-kind-song").click();
     await queue.run();
     await queue.settle();
 

@@ -17,6 +17,7 @@ at startup), so the Settings UI can change them without a restart:
 - `acoustid_api_key`  - the user's AcoustID key, for fingerprint identification.
 - `discogs_token`     - the user's Discogs token, for band profiles.
 - `transcribe_lyrics` - Whisper lyrics when none are found: auto | on | off.
+- `pianoteq_background` - Pianoteq renders made in the background: all | hands | main | off.
 
 Defaults fall back to the config.py constants (which honor their env vars), so
 nothing changes until the user overrides a value.
@@ -298,6 +299,27 @@ def _default_auto_sections() -> bool:
     wants it from first boot.
     """
     return os.environ.get("STEMDECK_AUTO_SECTIONS", "").strip() == "1"
+
+
+PIANOTEQ_BACKGROUND = ("all", "hands", "main", "off")
+
+
+def get_pianoteq_background() -> str:
+    """What Pianoteq renders in the background for every score: "all" (every
+    practice speed, both hands and each hand -- the default), "hands" (both
+    hands and each hand at 100 %), "main" (both hands at 100 %), "off"."""
+    with _LOCK:
+        v = _ensure().get("pianoteq_background")
+        return v if v in PIANOTEQ_BACKGROUND else "all"
+
+
+def set_pianoteq_background(value: str) -> str:
+    if value not in PIANOTEQ_BACKGROUND:
+        raise ValueError(f"pianoteq_background must be one of {PIANOTEQ_BACKGROUND}")
+    with _LOCK:
+        _ensure()["pianoteq_background"] = value
+        _save()
+        return value
 
 
 def get_auto_sections() -> bool:

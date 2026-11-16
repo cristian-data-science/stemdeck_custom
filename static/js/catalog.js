@@ -337,11 +337,40 @@ function trackMatchesSearch(track) {
   ].some((value) => String(value || "").toLowerCase().includes(q));
 }
 
-function findTrackBySource(sourceUrl, exceptId) {
+/** The model that separated a track ("demucs" | "roformer"), or "none" for a
+ *  solo piano imported as such (not separated); tracks saved before the
+ *  library knew it count as Demucs, the only model there was. */
+export function trackSeparator(track) {
+  return ["roformer", "none"].includes(track?.separator) ? track.separator : "demucs";
+}
+
+const SEPARATOR_LABELS = { demucs: "Demucs", roformer: "RoFormer", none: "Solo piano" };
+
+/** Another track in the library (not in the Trash) comes from the same source. */
+function hasOtherVersion(track) {
+  const source = normalizeSource(track?.sourceUrl);
+  if (!source) return false;
+  const trash = new Set(getTrashFolder()?.items || []);
+  return Object.entries(tracks).some(
+    ([id, t]) => id !== track.id && !trash.has(id) && normalizeSource(t.sourceUrl) === source,
+  );
+}
+
+/** "Demucs" / "RoFormer" for a track whose model is known, else "". */
+export function separatorLabel(track) {
+  return track?.separator ? SEPARATOR_LABELS[trackSeparator(track)] : "";
+}
+
+/** The track a new import of the same source replaces: same source AND same
+ *  model. Separated with the other model it is a second version, kept beside
+ *  the first so the two can be compared (the user deletes the one they do
+ *  not want); it used to replace it. `separator` null matches any. */
+function findTrackBySource(sourceUrl, exceptId, separator = null) {
   const source = normalizeSource(sourceUrl);
   if (!source) return null;
   for (const [id, track] of Object.entries(tracks)) {
     if (id === exceptId) continue;
+    if (separator && trackSeparator(track) !== separator) continue;
     if (normalizeSource(track.sourceUrl) === source) return id;
   }
   return null;
@@ -503,7 +532,7 @@ export function libraryIdentity(identity) {
 
 export function addTrackToLibrary(track) {
   // track: { id, title, thumb, stems, status, sourceUrl }
-  const existingId = findTrackBySource(track.sourceUrl, track.id);
+  const existingId = findTrackBySource(track.sourceUrl, track.id, trackSeparator(track));
   // A match already in the Trash is left exactly where it is. It is a distinct
   // job with its own files on disk, and the user is the only one who decides
   // when those go. The new track is in no folder yet, so the placement below
@@ -764,6 +793,8 @@ function stateMetadataToTrack(state, fallbackTrack) {
     sectionsSource: state.sections_source ?? fallbackTrack.sectionsSource ?? null,
     sourceUrl: state.source_url || fallbackTrack.sourceUrl,
     sourceFormat: state.source_format ?? fallbackTrack.sourceFormat ?? null,
+    // The model that separated it, shown on the row and the open track.
+    separator: state.separator ?? fallbackTrack.separator ?? null,
     // The source's own artist, title, album and lyrics (#699), read at import.
     audioTags: state.audio_tags ? libraryAudioTags(state.audio_tags) : fallbackTrack.audioTags ?? null,
     mixUrl: state.mix_url ?? fallbackTrack.mixUrl ?? null,
@@ -907,6 +938,7 @@ function applyTrackInfoToPanel(track) {
   const trackExtracted = document.getElementById("track-extracted");
   const trackSource = document.getElementById("track-source");
   const trackQuality = document.getElementById("track-quality");
+  const trackModel = document.getElementById("track-separator");
   const favBtn = document.getElementById("fav-btn");
   // Static duration for the footer's compact meta line -- deliberately not
   // #t-time, which live-updates during playback and would duplicate the
@@ -922,6 +954,26 @@ function applyTrackInfoToPanel(track) {
     trackQuality.hidden = !quality;
     const sep = trackQuality.previousElementSibling;
     if (sep?.classList.contains("daw-track-sep")) sep.hidden = !quality;
+  }
+  // The composer's «Modelo»: what pressing Extract stems with the other model
+  // does to this track (a second version beside it).
+  const separatorPick = document.getElementById("separatorPick");
+  if (separatorPick) {
+    const label = separatorLabel(track);
+    const model = trackSeparator(track);
+    const other = model === "roformer" ? "Demucs" : "RoFormer";
+    separatorPick.title = label && model !== "none"
+      ? i18nT("extract.modelCopy", { model: label, other })
+      : i18nT("extract.modelTitle");
+  }
+  if (trackModel) {
+    const label = separatorLabel(track);
+    trackModel.textContent = !label ? ""
+      : trackSeparator(track) === "none" ? i18nT("track.pianoOnly")
+        : i18nT("track.separatedWith", { model: label });
+    trackModel.hidden = !label;
+    const sep = trackModel.previousElementSibling;
+    if (sep?.classList.contains("daw-track-sep")) sep.hidden = !label;
   }
   // The now-playing square shows the same format icon the library row does.
   paintNowPlayingArt(trackFormat(track));
@@ -1215,8 +1267,18 @@ export function setCurrentTrack(trackId) {
   // server while that same track is already the open one. Anything else is
   // patched in place, since a full render() rebuilds the whole sidebar.
   if (openTrackTags().join("\n") !== _renderedTagsKey) { render(); return; }
+  const before = [...document.querySelectorAll(".cat-item.active")].map((el) => el.dataset.id);
   for (const el of document.querySelectorAll(".cat-item.active")) el.classList.remove("active");
   for (const el of document.querySelectorAll(`.cat-item[data-id="${trackId}"]`)) el.classList.add("active");
+  // The open track's row says which model separated it (trackSublineHtml):
+  // the row left and the row opened get their line again.
+  const trash = new Set(getTrashFolder()?.items || []);
+  for (const id of new Set([...before, trackId])) {
+    if (!tracks[id] || trash.has(id)) continue;
+    for (const sub of document.querySelectorAll(`.cat-item[data-id="${id}"] .cat-meta > .cat-sub:not(.trash-hint)`)) {
+      sub.innerHTML = trackSublineHtml(tracks[id]);
+    }
+  }
   for (const el of document.querySelectorAll(".strip-thumb.active")) el.classList.remove("active");
   for (const el of document.querySelectorAll(`.strip-thumb[data-id="${trackId}"]`)) el.classList.add("active");
 }
@@ -1857,7 +1919,10 @@ function trackSublineHtml(track, { inTrash = false } = {}) {
     // "6 stems" says the same thing forty times over, and the now-playing card
     // shows it for the track that is open (#699). A done track that does not
     // know its length says nothing rather than a placeholder.
-    parts = [track.duration ? fmtTime(track.duration) : ""];
+    // The model on the open track's row, and where it tells two versions of
+    // one song apart: on every row it would say "Demucs" forty times over.
+    const showModel = track.id === _currentTrackId || hasOtherVersion(track);
+    parts = [track.duration ? fmtTime(track.duration) : "", showModel ? separatorLabel(track) : ""];
   }
   if (inTrash) parts.push(i18nT("track.removed"));
   // Spaced as text as well as by the row's flex gap, so what a screen reader
@@ -3763,6 +3828,12 @@ async function syncWithServer() {
           known.sourceFormat = state.source_format;
           backfilled = true;
         }
+        // And which model separated it, for tracks saved before the library
+        // showed it.
+        if (state.separator && known.separator !== state.separator) {
+          known.separator = state.separator;
+          backfilled = true;
+        }
         // Likewise the band the server found while the job ran (#699), for a
         // track added before its import finished. Never over one already
         // saved on the track.
@@ -4621,6 +4692,175 @@ function _fmtBytes(n) {
   return `${n < 10 && i > 0 ? n.toFixed(1) : Math.round(n)} ${u[i]}`;
 }
 
+/** Bytes as read: "820 MB", "10.6 GB" (decimal units, as the disk reports). */
+function _fmtSize(n) {
+  if (!n) return "0 B";
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  while (n >= 1000 && i < u.length - 1) { n /= 1000; i++; }
+  return `${n < 10 && i > 1 ? n.toFixed(1) : Math.round(n)} ${u[i]}`;
+}
+
+const STORAGE_KINDS = ["stems", "score", "cache", "pt_main", "pt_hands", "pt_slow", "pt_old", "video", "source", "other"];
+const STORAGE_CLEAN = { slow: ["pt_slow"], hands: ["pt_hands"], old: ["pt_old"], cache: ["cache"], pianoteq: ["pt_main", "pt_hands", "pt_slow", "pt_old"] };
+const PT_PARTS = ["pt_main", "pt_hands", "pt_slow", "pt_old"];
+
+/** A cleaning button: the first click says how much it frees and asks for a
+ *  second one (no dialog over the settings), the second one cleans. */
+function storageCleanButton(label, what, jobs, size, after) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "settings-registry-refresh settings-storage-clean";
+  b.dataset.clean = what;
+  b.textContent = `${label} · ${_fmtSize(size)}`;
+  b.disabled = !size;
+  let armed = 0;
+  b.addEventListener("click", async () => {
+    if (!armed) {
+      b.classList.add("armed");
+      b.textContent = i18nT("settings.storage.confirm", { size: _fmtSize(size) });
+      armed = setTimeout(() => {
+        armed = 0;
+        b.classList.remove("armed");
+        b.textContent = `${label} · ${_fmtSize(size)}`;
+      }, 4000);
+      return;
+    }
+    clearTimeout(armed);
+    b.disabled = true;
+    try {
+      const res = await fetch("/api/storage/clean", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ what, jobs }),
+      });
+      const r = await res.json();
+      if (!res.ok) throw new Error(r.detail || res.statusText);
+      after(i18nT("settings.storage.freed", { size: _fmtSize(r.bytes), files: r.files }), what);
+    } catch (e) {
+      after(i18nT("settings.storage.failed", { message: e.message }), what);
+    }
+  });
+  return b;
+}
+
+/** Settings › Storage: the folder, the disk, every kind of file and every
+ *  song's size; what Pianoteq makes in the background; cleaning. */
+async function loadStorageView(overlay, message = "") {
+  const body = overlay.querySelector(".settings-storage-body");
+  if (!body) return;
+  if (!body.dataset.loaded) body.textContent = i18nT("settings.storage.loading");
+  let data;
+  try {
+    const res = await fetch("/api/storage");
+    data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+  } catch (e) {
+    body.textContent = i18nT("settings.storage.failed", { message: e.message });
+    return;
+  }
+  body.dataset.loaded = "1";
+  body.innerHTML = "";
+  const el = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  };
+  const sum = (parts, kinds) => kinds.reduce((a, k) => a + (parts[k] || 0), 0);
+  const after = (msg, what) => {
+    const note = what === "slow" && data.background === "all" ? ` ${i18nT("settings.storage.backgroundNote")}` : "";
+    loadStorageView(overlay, msg + note);
+  };
+
+  // Where, and how much of the disk.
+  const where = el("div", "settings-storage-where");
+  where.append(el("div", "settings-row-title", i18nT("settings.storage.folder")), el("code", "settings-logs-path", data.path));
+  if (data.disk) {
+    where.append(el("div", "settings-row-desc", i18nT("settings.storage.disk", {
+      used: _fmtSize(data.total), free: _fmtSize(data.disk.free), total: _fmtSize(data.disk.total),
+    })));
+  }
+  body.append(where);
+  if (message) body.append(el("div", "settings-storage-msg", message));
+
+  // By kind.
+  const kinds = el("div", "settings-storage-kinds");
+  for (const k of STORAGE_KINDS) {
+    const v = data.totals[k] || 0;
+    if (!v) continue;
+    const chip = el("span", `settings-storage-kind kind-${k}`);
+    chip.append(el("span", null, i18nT(`settings.storage.kind.${k}`)), el("b", null, _fmtSize(v)));
+    kinds.append(chip);
+  }
+  body.append(kinds);
+
+  // What Pianoteq makes in the background.
+  const bgRow = el("div", "settings-row");
+  const bgText = el("div", "settings-row-text");
+  bgText.append(
+    el("div", "settings-row-title", i18nT("settings.storage.background.title")),
+    el("div", "settings-row-desc", i18nT("settings.storage.background.desc")),
+  );
+  const sel = el("select", "settings-select settings-select-wide set-pianoteq-background");
+  for (const v of ["all", "hands", "main", "off"]) sel.add(new Option(i18nT(`settings.storage.background.${v}`), v));
+  sel.value = data.background;
+  sel.addEventListener("change", async () => {
+    await fetch("/api/storage/background", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: sel.value }),
+    }).catch(() => {});
+    data.background = sel.value;
+  });
+  bgRow.append(bgText, sel);
+  body.append(bgRow);
+
+  // Clean every song.
+  const all = el("div", "settings-storage-actions");
+  all.append(el("div", "settings-row-title", i18nT("settings.storage.cleanAll")));
+  for (const what of ["slow", "hands", "old", "cache", "pianoteq"]) {
+    all.append(storageCleanButton(i18nT(`settings.storage.clean.${what}`), what, null, sum(data.totals, STORAGE_CLEAN[what]), after));
+  }
+  body.append(all);
+
+  // Song by song.
+  body.append(el("div", "settings-row-title settings-storage-songs-title", i18nT("settings.storage.songs")));
+  const table = el("div", "settings-storage-table");
+  for (const job of data.jobs) {
+    if (!job.total) continue;
+    const row = el("details", "settings-storage-song");
+    row.dataset.job = job.id;
+    const head = el("summary");
+    const title = tracks[job.id]?.title || job.title || job.id;
+    head.append(
+      el("span", "settings-storage-song-title", title),
+      el("b", null, _fmtSize(job.total)),
+      el("span", "settings-storage-song-pt", `${i18nT("settings.storage.col.pianoteq")} ${_fmtSize(sum(job.parts, PT_PARTS))}`),
+    );
+    row.append(head);
+    const detail = el("div", "settings-storage-song-detail");
+    detail.append(el("code", "settings-logs-path", job.path));
+    const parts = el("div", "settings-storage-kinds");
+    for (const k of STORAGE_KINDS) {
+      if (!job.parts[k]) continue;
+      const chip = el("span", `settings-storage-kind kind-${k}`);
+      chip.append(el("span", null, i18nT(`settings.storage.kind.${k}`)), el("b", null, _fmtSize(job.parts[k])));
+      parts.append(chip);
+    }
+    detail.append(parts);
+    const acts = el("div", "settings-storage-actions");
+    for (const what of ["slow", "hands", "old", "cache", "pianoteq"]) {
+      const size = sum(job.parts, STORAGE_CLEAN[what]);
+      if (size) acts.append(storageCleanButton(i18nT(`settings.storage.clean.${what}`), what, [job.id], size, after));
+    }
+    detail.append(acts);
+    row.append(detail);
+    table.append(row);
+  }
+  body.append(table);
+}
+
 /** Read-only listing of the log files: paths, sizes and what writes each one.
  *  Contents are deliberately not served -- a traceback can capture anything,
  *  and the files are on the machine the user is already sitting at. */
@@ -4810,6 +5050,7 @@ function openLibraryEditor() {
         <button class="settings-tab" type="button" data-tab="details" role="tab" data-i18n="settings.tab.songDetails">Song details</button>
         <button class="settings-tab" type="button" data-tab="network" role="tab" data-i18n="settings.tab.network">Network</button>
         <button class="settings-tab" type="button" data-tab="export" role="tab" data-i18n="settings.tab.export">Export</button>
+        <button class="settings-tab" type="button" data-tab="storage" role="tab" data-i18n="settings.tab.storage">Storage</button>
         <button class="settings-tab" type="button" data-tab="logs" role="tab" data-i18n="settings.tab.logs">Logs</button>
         <button class="settings-tab" type="button" data-tab="registry" role="tab" data-i18n="settings.tab.registry">Registry</button>
       </div>
@@ -5031,6 +5272,16 @@ function openLibraryEditor() {
           </div>
         </div>
       </div>
+      <div class="settings-pane hidden" data-pane="storage">
+        <div class="settings-row">
+          <div class="settings-row-text">
+            <div class="settings-row-title" data-i18n="settings.storage.title">Storage</div>
+            <div class="settings-row-desc" data-i18n="settings.storage.desc"></div>
+          </div>
+          <button class="settings-registry-refresh settings-storage-refresh" type="button" data-i18n="settings.storage.refresh">Refresh</button>
+        </div>
+        <div class="settings-storage-body" data-i18n="settings.storage.loading">Measuring…</div>
+      </div>
       <div class="settings-pane hidden" data-pane="logs">
         <div class="settings-subtabs" role="tablist">
           <button class="settings-subtab active" type="button" data-sub="location" role="tab" data-i18n="settings.logs.locationTab">Location</button>
@@ -5106,8 +5357,10 @@ function openLibraryEditor() {
       overlay.querySelectorAll(".settings-pane").forEach((p) => p.classList.toggle("hidden", p.dataset.pane !== name));
       if (name === "registry") loadRegistryView(overlay);
       if (name === "logs") loadLogsView(overlay);
+      if (name === "storage") loadStorageView(overlay);
     });
   });
+  overlay.querySelector(".settings-storage-refresh")?.addEventListener("click", () => loadStorageView(overlay));
   overlay.querySelector(".settings-registry-refresh:not(.settings-logs-refresh)")
     ?.addEventListener("click", () => loadRegistryView(overlay));
   overlay.querySelector(".settings-logs-refresh")?.addEventListener("click", () => loadLogsView(overlay));

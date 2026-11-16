@@ -282,13 +282,20 @@ def _run_with_band_lookup(job: Job, source: Path, job_dir: Path) -> None:
     failure raises out of _run_common, past finish(), and nothing is written.
     """
     lookup = IdentifyLookup.start(job, [source])
+    # A solo piano recording (imported as such, separator "none") has no
+    # words to look up, transcribe or time.
+    words = job.separator != "none"
     # The lyrics, on the same terms: LRCLIB beside separation, lyrics.json
     # written only by a pipeline that got to the end. Looked up by the
     # identity once the identification has it, else by the tags.
-    lyrics = LyricsLookup.start(
-        job,
-        job_dir,
-        identity=(lambda: lookup.wait_identity(LYRICS_IDENTITY_WAIT_SEC)) if lookup else None,
+    lyrics = (
+        LyricsLookup.start(
+            job,
+            job_dir,
+            identity=(lambda: lookup.wait_identity(LYRICS_IDENTITY_WAIT_SEC)) if lookup else None,
+        )
+        if words
+        else None
     )
     _run_common(job, source, job_dir)
     if lookup is not None:
@@ -303,6 +310,8 @@ def _run_with_band_lookup(job: Job, source: Path, job_dir: Path) -> None:
     # Lyrics from the vocals stem, only when the lookup found none: last,
     # because it needs both the stem and the lookup's answer. Never raises
     # but for a cancel.
+    if not words:
+        return
     mark = time.monotonic()
     transcribe_lyrics(job, job_dir)
     _lap(job, "transcribe", mark)

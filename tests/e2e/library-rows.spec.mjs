@@ -72,7 +72,10 @@ test.describe("library rows", () => {
       withTracks({ ...fixtureTrack(JOB_ID, "Timed"), duration: 357 }),
     );
     await open(page);
-    expect(await rowText(page, JOB_ID)).toBe("05:57");
+    // The fixture and its sibling are two versions of one source, so the row
+    // also says which model made it (a song with one version shows only its
+    // length: tests/e2e/model-versions.spec.mjs).
+    expect(await rowText(page, JOB_ID)).toBe("05:57 · Demucs");
   });
 
   test("an old stored label is not shown, and not searched", async ({ page }) => {

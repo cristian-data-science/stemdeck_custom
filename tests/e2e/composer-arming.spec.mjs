@@ -131,6 +131,8 @@ test.describe("composer arming", () => {
 
     await page.locator("#url").fill(YOUTUBE_URL);
     await page.locator("#submit").click();
+    // A new link asks what it is (job.js askAudioKind): a song, separated.
+    await page.locator(".audio-kind-song").click();
 
     await expect.poll(() => hits.length, { timeout: 10000 }).toBe(1);
     expect(hits[0]).not.toContain("resplit");
@@ -149,6 +151,8 @@ test.describe("composer arming", () => {
     );
     await page.locator("#url").fill(YOUTUBE_URL);
     await page.locator("#submit").click();
+    // A new link asks what it is (job.js askAudioKind): a song, separated.
+    await page.locator(".audio-kind-song").click();
 
     await expect(label).toHaveText(before.trim(), { timeout: 10000 });
   });

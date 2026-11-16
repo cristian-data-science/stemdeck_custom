@@ -325,7 +325,9 @@ class Job:
     # Which model separated the stems: Demucs (htdemucs_6s, the default) or
     # BS-RoFormer SW (experimental, app/experimental/separation.py; chosen at
     # import when installed). Better for a keyboard Demucs hears as guitar.
-    separator: Literal["demucs", "roformer"] = "demucs"
+    # "none": a solo piano recording, imported as such -- not separated at
+    # all, its one stem "piano" is the audio itself (separate.py).
+    separator: Literal["demucs", "roformer", "none"] = "demucs"
     # When the user put this job in the Trash, or None if they have not.
     #
     # Server-side on purpose. The Trash used to live only in the browser's

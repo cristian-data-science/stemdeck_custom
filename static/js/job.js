@@ -654,6 +654,52 @@ async function wireSeparatorPick() {
   pick.hidden = false;
 }
 
+/** What a new link is, asked before importing it: "piano" (a solo piano, not
+ *  separated: straight to its score and Pianoteq audio), "song" (separated
+ *  into stems as always), or null when the dialog is closed (no import). The
+ *  last answer is the one focused, so Enter repeats it. */
+function askAudioKind() {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "reset-confirm-backdrop audio-kind-confirm";
+    overlay.innerHTML = `
+      <div class="reset-confirm-card" role="dialog" aria-modal="true" aria-label="${t("import.kindTitle")}">
+        <div class="reset-confirm-title playlist-confirm-title">${t("import.kindTitle")}</div>
+        <div class="audio-kind-choices">
+          <button class="audio-kind-choice audio-kind-piano" type="button" data-kind="piano">
+            <strong>🎹 ${t("import.kindPiano")}</strong>
+            <span>${t("import.kindPianoDesc")}</span>
+          </button>
+          <button class="audio-kind-choice audio-kind-song" type="button" data-kind="song">
+            <strong>🎵 ${t("import.kindSong")}</strong>
+            <span>${t("import.kindSongDesc")}</span>
+          </button>
+        </div>
+        <div class="reset-confirm-actions">
+          <button class="reset-confirm-cancel" type="button">${t("playlist.cancel")}</button>
+        </div>
+      </div>
+    `;
+    const onKey = (e) => {
+      if (e.code === "Escape") finish(null);
+    };
+    const finish = (value) => {
+      document.removeEventListener("keydown", onKey);
+      overlay.remove();
+      if (value) localStorage.setItem("stemdeck.importKind", value);
+      resolve(value);
+    };
+    overlay.querySelectorAll("[data-kind]").forEach((btn) =>
+      btn.addEventListener("click", () => finish(btn.dataset.kind)));
+    overlay.querySelector(".reset-confirm-cancel").addEventListener("click", () => finish(null));
+    overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) finish(null); });
+    document.addEventListener("keydown", onKey);
+    document.body.appendChild(overlay);
+    const last = localStorage.getItem("stemdeck.importKind") === "piano" ? "piano" : "song";
+    overlay.querySelector(`[data-kind="${last}"]`).focus();
+  });
+}
+
 async function postFileJob(file) {
   const fd = new FormData();
   fd.append("file", file);
@@ -829,6 +875,20 @@ export function wireJobForm() {
     // composer still be used while such a track is open.
     const resplitJob = !file && !urlInput.value.trim() ? submitBtn.dataset.resplitJob : "";
 
+    // A new link: a solo piano skips the separation and goes straight to its
+    // score and Pianoteq audio. Asked every time (the last answer is focused).
+    let pianoOnly = false;
+    if (!file && !resplitJob) {
+      const kind = await askAudioKind();
+      if (!kind) {
+        setSubmitProcessing(false);
+        return;
+      }
+      pianoOnly = kind === "piano";
+    }
+    const stems = pianoOnly ? ["piano"] : [...selectedStems];
+    const separator = pianoOnly ? "none" : separatorChoice();
+
     const sanitized = file ? sanitizeFilename(file.name) : null;
     const sourceUrl = resplitJob
       ? submitBtn.dataset.resplitSource
@@ -862,8 +922,9 @@ export function wireJobForm() {
           url: urlInput.value,
           // Backend uses this to decide whether to ffmpeg-amix a
           // "selected stems" track (mix.wav) at the end of the pipeline.
-          stems: [...selectedStems],
-          separator: separatorChoice(),
+          stems,
+          separator,
+          piano_only: pianoOnly,
         }),
       };
     }
@@ -893,13 +954,13 @@ export function wireJobForm() {
     // silently import the same file a second time.
     if (file) fileInput._clear?.();
     jobSources.set(jobId, newSourceUrl);
-    jobVocalSplitModes.set(jobId, selectedStems.has("vocals") ? vocalSplitMode : "all");
+    jobVocalSplitModes.set(jobId, stems.includes("vocals") ? vocalSplitMode : "all");
     addTrackToLibrary({
       id: jobId,
       title: displayTitle,
       thumb: "",
-      stems: [...selectedStems],
-      selectedStems: [...selectedStems],
+      stems,
+      selectedStems: stems,
       audioStems: [],
       status: "processing",
       bpm: null,
@@ -909,6 +970,10 @@ export function wireJobForm() {
       lufs: null,
       peakDb: null,
       sourceUrl: newSourceUrl,
+      // The model: an import of the same link with the other model is a second
+      // version beside the first, not a replacement (catalog.findTrackBySource).
+      // "none" for a solo piano, which is a version of its own too.
+      separator,
     });
 
     // No per-job stream: opening one per queued import would burn through the

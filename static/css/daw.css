@@ -1102,7 +1102,9 @@ input, textarea { font-family: inherit; }
 .le-badge { margin-left: 7px; padding: 1px 6px; border-radius: 5px; font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; background: rgba(214,90,74,0.16); color: var(--danger); }
 .library-editor-empty { color: var(--muted); text-align: center; padding: 22px 10px !important; }
 /* Settings → tabs */
-.settings-tabs { display: flex; gap: 2px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+.settings-tabs { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+/* Seven tabs: they wrap rather than run out of the dialog (Storage made it seven). */
+.settings-tab { white-space: nowrap; }
 .settings-tab { background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted); font-family: var(--font-mono); font-size: 12px; font-weight: 600; padding: 5px 12px 9px; cursor: pointer; margin-bottom: -1px; }
 .settings-tab:hover { color: var(--fg-2); }
 .settings-tab.active { color: var(--fg); border-bottom-color: var(--accent); }
@@ -1262,6 +1264,21 @@ input, textarea { font-family: inherit; }
   color: var(--accent);
 }
 .playlist-confirm-go:disabled { opacity: 0.4; cursor: not-allowed; }
+/* «¿Solo piano o canción completa?», asked for each new link (job.js). */
+.audio-kind-choices { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.audio-kind-choice {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 3px; text-align: left;
+  padding: 10px 12px; border-radius: 8px; cursor: pointer; font-family: var(--font-mono);
+  border: 1px solid var(--border); background: rgba(21,31,39,0.52); color: var(--fg);
+}
+.audio-kind-choice strong { font-size: 12px; }
+.audio-kind-choice span { font-size: 10.5px; color: var(--muted); line-height: 1.4; }
+.audio-kind-choice:hover,
+.audio-kind-choice:focus-visible {
+  outline: none; border-color: rgba(232, 168, 56, 0.55); background: rgba(232, 168, 56, 0.12);
+}
+.audio-kind-choice:hover strong,
+.audio-kind-choice:focus-visible strong { color: var(--accent); }
 
 .library-editor-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 11px; }
 .library-editor-status { font-size: 10.5px; color: var(--muted); }
@@ -5768,3 +5785,21 @@ input, textarea { font-family: inherit; }
   padding: 0 6px;
 }
 .daw-separator-pick option { color: #111; }
+
+/* Settings › Storage */
+.settings-storage-body { display: flex; flex-direction: column; gap: 12px; font-family: var(--font-mono); font-size: 11.5px; color: var(--fg-2); }
+.settings-storage-where { display: flex; flex-direction: column; gap: 4px; }
+.settings-storage-msg { color: var(--accent); }
+.settings-storage-kinds { display: flex; flex-wrap: wrap; gap: 6px; }
+.settings-storage-kind { display: inline-flex; gap: 6px; align-items: baseline; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--border); background: rgba(10,17,24,0.5); }
+.settings-storage-kind b { color: var(--fg); }
+.settings-storage-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.settings-storage-actions .settings-row-title { width: 100%; }
+.settings-storage-clean:disabled { opacity: 0.4; cursor: default; }
+.settings-storage-clean.armed { border-color: var(--danger); color: var(--danger); }
+.settings-storage-table { display: flex; flex-direction: column; max-height: 320px; overflow: auto; border-top: 1px solid var(--border); }
+.settings-storage-song { border-bottom: 1px solid var(--border); }
+.settings-storage-song summary { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: baseline; padding: 6px 2px; cursor: pointer; }
+.settings-storage-song-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+.settings-storage-song-pt { color: var(--muted); }
+.settings-storage-song-detail { display: flex; flex-direction: column; gap: 8px; padding: 4px 2px 10px; }

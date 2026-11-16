@@ -220,6 +220,9 @@ class JobRequest(BaseModel):
     # The separation model: "demucs" (default) or "roformer" (experimental,
     # only when installed -- see app/experimental/separation.py).
     separator: str | None = None
+    # A solo piano recording: not separated (its one stem "piano" is the
+    # audio itself), straight to the piano score and its Pianoteq audio.
+    piano_only: bool = False
 
 
 def _separator(value: str | None) -> str:
@@ -269,11 +272,13 @@ async def _create_youtube_job(request: Request) -> dict[str, str]:
     selected = [s for s in payload.stems if s in STEM_NAMES] if payload.stems else list(STEM_NAMES)
     if not selected:
         selected = list(STEM_NAMES)
+    if payload.piano_only:
+        selected = ["piano"]
 
     job = Job(
         id=uuid.uuid4().hex[:12],
         selected_stems=selected,
-        separator=_separator(payload.separator),
+        separator="none" if payload.piano_only else _separator(payload.separator),
         source_url=url,
         # Captured now, not when the sections stage is reached: that is the
         # last thing the pipeline does, and the toggle clears itself as soon
