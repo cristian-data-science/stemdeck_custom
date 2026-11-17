@@ -1383,6 +1383,19 @@ function wire() {
     rebuild();
     loadSamples();
   };
+  // «🎚 Sonido»: what is set once (the saxophone, its room, its tone, the
+  // expression), in a menu of its own.
+  const soundMenu = (open) => {
+    $("sx-sound-menu").hidden = !open;
+    $("sx-sound-toggle").setAttribute("aria-expanded", String(open));
+  };
+  $("sx-sound-toggle").onclick = () => soundMenu($("sx-sound-menu").hidden);
+  document.addEventListener("pointerdown", (e) => {
+    if (!$("sx-sound-menu").hidden && !e.target.closest(".sx-menu-wrap")) soundMenu(false);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("sx-sound-menu").hidden) soundMenu(false);
+  });
   $("sx-metronome").checked = !!prefs.metronome;
   $("sx-metronome").onchange = () => {
     prefs.metronome = $("sx-metronome").checked;

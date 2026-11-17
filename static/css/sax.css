@@ -74,8 +74,27 @@ body { display: flex; flex-direction: column; }
 .sx-status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   text-align: center; padding: 20px; background: rgba(7, 9, 16, 0.78); font-size: 16px; color: #e8edf2; }
 
-.sx-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 16px;
+/* The bar below, in rows by what they are for: playing the song; studying
+   it, what is heard and the modes (in clusters, a line between them); what
+   is going on. «🎚 Sonido» keeps what is set once (the saxophone, its room,
+   its tone, the expression) out of the way. */
+.sx-bar { position: relative; display: flex; flex-direction: column; gap: 8px; padding: 10px 16px;
   background: #0d1120; border-top: 1px solid #1f2640; }
+.sx-row { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; }
+.sx-row-status { gap: 4px 14px; min-height: 18px; }
+.sx-row-status:not(:has(> :not([hidden]):not(:empty))) { display: none; }
+.sx-cluster { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; }
+.sx-cluster + .sx-cluster { padding-left: 14px; border-left: 1px solid #262e4a; }
+.sx-menu-wrap { position: relative; }
+.sx-menu-toggle { min-height: 32px; padding: 0 12px; border-radius: 8px; cursor: pointer; font: inherit; font-weight: 600;
+  border: 1px solid #2b3350; background: #12172a; color: #c9d1e3; }
+.sx-menu-toggle[aria-expanded="true"] { border-color: #f4b740; color: #fff; }
+.sx-menu { position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 20; display: grid; gap: 10px; min-width: 300px;
+  padding: 14px; border-radius: 12px; background: #11162a; border: 1px solid #2b3350; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55); }
+.sx-menu[hidden] { display: none; }
+.sx-menu .sx-field { display: grid; grid-template-columns: 4.5em 1fr; gap: 10px; }
+.sx-menu .sx-field[hidden] { display: none; }
+.sx-menu .sx-field select { width: 100%; }
 .sx-play { width: 46px; height: 46px; border-radius: 50%; border: none; cursor: pointer; font-size: 18px;
   background: linear-gradient(135deg, #f4b740, #e07b1a); color: #111; box-shadow: 0 0 16px rgba(244, 183, 64, 0.5); }
 .sx-time { font-variant-numeric: tabular-nums; color: #c9d1e3; }

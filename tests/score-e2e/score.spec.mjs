@@ -1682,6 +1682,13 @@ test("🎷 Saxo Metrónomo y Cuenta: a click on each beat of the song, the bar's
   await page.goto(`/sax/?job=5c0de0000001&stems=piano`);
   await page.waitForFunction(() => window.__sax?.notes?.length > 5 && window.__sax.bars && document.querySelector("#sx-audio").readyState >= 1);
   await expect(page.locator("#sx-metronome")).toBeVisible();
+  // «🎚 Sonido»: what is set once is in a menu of its own, out of the bar.
+  await expect(page.locator("#sx-expression")).toBeHidden();
+  await page.locator("#sx-sound-toggle").click();
+  await expect(page.locator("#sx-expression")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#sx-expression")).toBeHidden();
+  await expect(page.locator("#sx-sound")).toBeVisible(); // «Escuchar» stays at hand
   await page.evaluate(() => { document.querySelector("#sx-audio").currentTime = 0.8; });
   await page.locator("#sx-metronome").check();
   await page.locator("#sx-play").click();

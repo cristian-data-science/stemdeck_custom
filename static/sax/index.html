@@ -94,92 +94,114 @@
     </main>
 
     <footer class="sx-bar">
-      <button class="sx-play" id="sx-play" type="button" title="Reproducir / pausar (Espacio)">▶</button>
-      <span class="sx-time"><span id="sx-now-t">0:00</span> / <span id="sx-total">0:00</span></span>
-      <input class="sx-seek" id="sx-seek" type="range" min="0" max="1000" value="0" aria-label="Posición" />
-      <span class="sx-group" role="group" aria-label="Velocidad" title="Velocidad (mantiene la afinación)">
-        <button type="button" data-speed="25">25 %</button>
-        <button type="button" data-speed="50">50 %</button>
-        <button type="button" data-speed="70">70 %</button>
-        <button type="button" data-speed="100" aria-pressed="true">100 %</button>
-      </span>
-      <span class="sx-group sx-loop" role="group" aria-label="Bucle"
-            title="Bucle: repite una parte para estudiarla. A marca el inicio (el compás que está sonando) y B el final; al pasar B la canción vuelve a A">
-        <span class="sx-loop-label">Bucle</span>
-        <button type="button" id="sx-loop-a" aria-pressed="false" title="A: el bucle empieza en el compás que está sonando">A</button>
-        <button type="button" id="sx-loop-b" aria-pressed="false" title="B: el bucle termina al final del compás que está sonando (B sin A: repite ese compás)">B</button>
-        <button type="button" id="sx-loop-on" aria-pressed="false" title="Activar o desactivar el bucle" disabled>🔁</button>
-        <button type="button" id="sx-loop-clear" title="Quitar el bucle" disabled>✕</button>
-        <span class="sx-loop-info" id="sx-loop-info"></span>
-      </span>
-      <label class="sx-field sx-check sx-beats-only" hidden title="Metrónomo: un clic en cada pulso de la canción (más agudo en el primero de cada compás)">
-        <input type="checkbox" id="sx-metronome" /> Metrónomo
-      </label>
-      <label class="sx-field sx-beats-only" hidden title="Cuenta: al pulsar ▶ suenan los clics de uno o dos compases, al tempo de ese punto, y luego empieza la canción">
-        Cuenta
-        <select id="sx-countin">
-          <option value="0">no</option>
-          <option value="bar">1 compás</option>
-          <option value="2bar">2 compases</option>
-        </select>
-      </label>
-      <label class="sx-field" id="sx-engine-field" hidden
-             title="SWAM: un saxo por modelado físico (Audio Modeling SWAM Saxophones, instalado en este PC), con transiciones, respiración y dinámica de verdad; graba la línea en unos segundos. Grabado: notas sueltas de un saxo real (Iowa), al instante">
-        Saxo
-        <select id="sx-engine">
-          <option value="swam">SWAM (modelado físico)</option>
-          <option value="iowa">Grabado (notas sueltas)</option>
-        </select>
-      </label>
-      <label class="sx-field sx-swam-only" hidden title="La sala donde suena el saxo de SWAM. Seca: sin reverberación, se oye cada detalle. Media: una sala normal. Amplia: una sala grande, más cola. Cambiarla graba la línea de nuevo">
-        Sala
-        <select id="sx-room">
-          <option value="dry">Seca</option>
-          <option value="medium">Media</option>
-          <option value="large">Amplia</option>
-        </select>
-      </label>
-      <label class="sx-field sx-swam-only" hidden title="Cómo se sopla el saxo de SWAM. Limpio: como hasta ahora. Suave: soplado más suave, un tono más oscuro y con más aire (el de una balada). Rasgado: con un gruñido en el sonido. Cambiarlo graba la línea de nuevo">
-        Tono
-        <select id="sx-tone">
-          <option value="clean">Limpio</option>
-          <option value="soft">Suave, con aire</option>
-          <option value="growl">Rasgado</option>
-        </select>
-      </label>
-      <label class="sx-field" title="Expresivo: el saxo toca la voz como fue cantada (sus deslizamientos, su vibrato, sus matices), con un saxo grabado sin vibrato. Notas exactas: cada nota fija, como está escrita">
-        Sonido
-        <select id="sx-expression">
-          <option value="expressive">Expresivo (como canta)</option>
-          <option value="exact">Notas exactas</option>
-        </select>
-      </label>
-      <label class="sx-field" title="Qué se escucha">
-        Escuchar
-        <select id="sx-sound">
-          <option value="sax-rest">Saxo + resto de la canción</option>
-          <option value="sax">Solo saxo</option>
-          <option value="original">Canción original</option>
-        </select>
-      </label>
-      <label class="sx-field sx-vol" title="Volumen del saxo">🎷 <input type="range" id="sx-vol-sax" min="0" max="100" value="80" /></label>
-      <label class="sx-field sx-vol" title="Volumen del resto de la canción">🎶 <input type="range" id="sx-vol-rest" min="0" max="100" value="70" /></label>
-      <span class="sx-group" title="Cuántos segundos de notas se ven antes de llegar al saxo">
-        <button type="button" id="sx-ahead-less" title="Notas más separadas">−</button>
-        <output id="sx-ahead">5 s</output>
-        <button type="button" id="sx-ahead-more" title="Ver venir más">＋</button>
-      </span>
-      <button class="sx-mic" id="sx-edit" type="button" aria-pressed="false"
-              title="Editar: toca una nota para borrarla o moverla (arrástrala arriba/abajo o a los lados); ↶ deshace">✏️ Editar</button>
-      <button class="sx-mic" id="sx-mic" type="button" aria-pressed="false"
-              title="Practicar: toca tu saxo; el micrófono lo escucha y te dice si estás en la nota (y cuántos cents arriba o abajo)">🎤 Practicar</button>
-      <button class="sx-mic" id="sx-wait" type="button" aria-pressed="false" hidden
-              title="Esperarme: la canción se detiene en cada nota hasta que la tocas">⏸ Esperarme</button>
-      <span class="sx-score" id="sx-score" hidden></span>
-      <span class="sx-sound-state" id="sx-sound-state">Cargando el saxo real…</span>
-      <span class="sx-swam-state" id="sx-swam-state" hidden></span>
-      <span class="sx-stats" id="sx-stats"></span>
-      <span class="sx-warn" id="sx-warn" hidden></span>
+      <!-- 1: playing the song · the modes -->
+      <div class="sx-row sx-row-play">
+        <button class="sx-play" id="sx-play" type="button" title="Reproducir / pausar (Espacio)">▶</button>
+        <span class="sx-time"><span id="sx-now-t">0:00</span> / <span id="sx-total">0:00</span></span>
+        <input class="sx-seek" id="sx-seek" type="range" min="0" max="1000" value="0" aria-label="Posición" />
+        <span class="sx-group" role="group" aria-label="Velocidad" title="Velocidad (mantiene la afinación)">
+          <button type="button" data-speed="25">25 %</button>
+          <button type="button" data-speed="50">50 %</button>
+          <button type="button" data-speed="70">70 %</button>
+          <button type="button" data-speed="100" aria-pressed="true">100 %</button>
+        </span>
+        <div class="sx-cluster" role="group" aria-label="Modos">
+          <button class="sx-mic" id="sx-edit" type="button" aria-pressed="false"
+                  title="Editar: toca una nota para borrarla o moverla (arrástrala arriba/abajo o a los lados); ↶ deshace">✏️ Editar</button>
+          <button class="sx-mic" id="sx-mic" type="button" aria-pressed="false"
+                  title="Practicar: toca tu saxo; el micrófono lo escucha y te dice si estás en la nota (y cuántos cents arriba o abajo)">🎤 Practicar</button>
+          <button class="sx-mic" id="sx-wait" type="button" aria-pressed="false" hidden
+                  title="Esperarme: la canción se detiene en cada nota hasta que la tocas">⏸ Esperarme</button>
+          <span class="sx-score" id="sx-score" hidden></span>
+        </div>
+      </div>
+      <!-- 2: studying it · what is heard -->
+      <div class="sx-row">
+        <div class="sx-cluster" role="group" aria-label="Estudio">
+          <span class="sx-group sx-loop" role="group" aria-label="Bucle"
+                title="Bucle: repite una parte para estudiarla. A marca el inicio (el compás que está sonando) y B el final; al pasar B la canción vuelve a A">
+            <span class="sx-loop-label">Bucle</span>
+            <button type="button" id="sx-loop-a" aria-pressed="false" title="A: el bucle empieza en el compás que está sonando">A</button>
+            <button type="button" id="sx-loop-b" aria-pressed="false" title="B: el bucle termina al final del compás que está sonando (B sin A: repite ese compás)">B</button>
+            <button type="button" id="sx-loop-on" aria-pressed="false" title="Activar o desactivar el bucle" disabled>🔁</button>
+            <button type="button" id="sx-loop-clear" title="Quitar el bucle" disabled>✕</button>
+            <span class="sx-loop-info" id="sx-loop-info"></span>
+          </span>
+          <label class="sx-field sx-check sx-beats-only" hidden title="Metrónomo: un clic en cada pulso de la canción (más agudo en el primero de cada compás)">
+            <input type="checkbox" id="sx-metronome" /> Metrónomo
+          </label>
+          <label class="sx-field sx-beats-only" hidden title="Cuenta: al pulsar ▶ suenan los clics de uno o dos compases, al tempo de ese punto, y luego empieza la canción">
+            Cuenta
+            <select id="sx-countin">
+              <option value="0">no</option>
+              <option value="bar">1 compás</option>
+              <option value="2bar">2 compases</option>
+            </select>
+          </label>
+          <span class="sx-group" title="Cuántos segundos de notas se ven antes de llegar al saxo">
+            <span class="sx-loop-label">Vista</span>
+            <button type="button" id="sx-ahead-less" title="Notas más separadas">−</button>
+            <output id="sx-ahead">5 s</output>
+            <button type="button" id="sx-ahead-more" title="Ver venir más">＋</button>
+          </span>
+        </div>
+        <div class="sx-cluster" role="group" aria-label="Sonido">
+          <label class="sx-field" title="Qué se escucha">
+            Escuchar
+            <select id="sx-sound">
+              <option value="sax-rest">Saxo + resto de la canción</option>
+              <option value="sax">Solo saxo</option>
+              <option value="original">Canción original</option>
+            </select>
+          </label>
+          <label class="sx-field sx-vol" title="Volumen del saxo">🎷 <input type="range" id="sx-vol-sax" min="0" max="100" value="80" /></label>
+          <label class="sx-field sx-vol" title="Volumen del resto de la canción">🎶 <input type="range" id="sx-vol-rest" min="0" max="100" value="70" /></label>
+          <div class="sx-menu-wrap">
+            <button class="sx-menu-toggle" id="sx-sound-toggle" type="button" aria-haspopup="true" aria-expanded="false"
+                    title="Cómo suena el saxo: con qué se toca, la sala, el tono y si sigue los matices de la voz">🎚 Sonido ▾</button>
+            <div class="sx-menu" id="sx-sound-menu" hidden>
+            <label class="sx-field" id="sx-engine-field" hidden
+                   title="SWAM: un saxo por modelado físico (Audio Modeling SWAM Saxophones, instalado en este PC), con transiciones, respiración y dinámica de verdad; graba la línea en unos segundos. Grabado: notas sueltas de un saxo real (Iowa), al instante">
+              Saxo
+              <select id="sx-engine">
+                <option value="swam">SWAM (modelado físico)</option>
+                <option value="iowa">Grabado (notas sueltas)</option>
+              </select>
+            </label>
+            <label class="sx-field sx-swam-only" hidden title="La sala donde suena el saxo de SWAM. Seca: sin reverberación, se oye cada detalle. Media: una sala normal. Amplia: una sala grande, más cola. Cambiarla graba la línea de nuevo">
+              Sala
+              <select id="sx-room">
+                <option value="dry">Seca</option>
+                <option value="medium">Media</option>
+                <option value="large">Amplia</option>
+              </select>
+            </label>
+            <label class="sx-field sx-swam-only" hidden title="Cómo se sopla el saxo de SWAM. Limpio: como hasta ahora. Suave: soplado más suave, un tono más oscuro y con más aire (el de una balada). Rasgado: con un gruñido en el sonido. Cambiarlo graba la línea de nuevo">
+              Tono
+              <select id="sx-tone">
+                <option value="clean">Limpio</option>
+                <option value="soft">Suave, con aire</option>
+                <option value="growl">Rasgado</option>
+              </select>
+            </label>
+            <label class="sx-field" title="Expresivo: el saxo toca la voz como fue cantada (sus deslizamientos, su vibrato, sus matices), con un saxo grabado sin vibrato. Notas exactas: cada nota fija, como está escrita">
+              Sonido
+              <select id="sx-expression">
+                <option value="expressive">Expresivo (como canta)</option>
+                <option value="exact">Notas exactas</option>
+              </select>
+            </label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- 3: what is going on -->
+      <div class="sx-row sx-row-status">
+        <span class="sx-sound-state" id="sx-sound-state">Cargando el saxo real…</span>
+        <span class="sx-swam-state" id="sx-swam-state" hidden></span>
+        <span class="sx-stats" id="sx-stats"></span>
+        <span class="sx-warn" id="sx-warn" hidden></span>
+      </div>
     </footer>
 
     <audio id="sx-audio" preload="auto"></audio>
