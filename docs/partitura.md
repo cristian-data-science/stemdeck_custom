@@ -89,7 +89,8 @@ compartas y, si lo prefieres, usa una cuenta secundaria. Cuando caduque, vuelve 
   cada nota saltan chispas y la tecla se hunde iluminada con su color. Al fondo la perspectiva
   comprime el tiempo unas 5 veces y las notas cortas quedaban como rayitas apiladas: ahora entran
   tenues (35 % en el extremo, `depthFade`) y se encienden al pasar la mitad del camino, así las
-  que vas a tocar destacan. **Plano**: las barras
+  que vas a tocar destacan. Los números de compás (en los tres estilos) van en blanco sobre una
+  etiqueta oscura, un 25 % más grandes: antes eran blanco al 45 % y casi no se leían. **Plano**: las barras
   simples de antes, más livianas para equipos lentos. Tocar y arrastrar notas funciona igual
   en los dos (en 3D el arrastre sigue la perspectiva).
 - Opciones del piano (se guardan en este navegador): **Teclado** «Rango de la canción» (de la

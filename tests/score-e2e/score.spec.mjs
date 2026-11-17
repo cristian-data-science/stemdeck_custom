@@ -1234,6 +1234,20 @@ test("on a tablet the bars step aside while the piano plays, and come back on pa
   await page.locator("#sc-play").click();
 });
 
+test("the bar numbers on the falling notes are drawn readable, consecutive, in every style", async ({ page }) => {
+  await open(page, { names: false });
+  await page.locator("#sc-view-toggle").click();
+  for (const style of ["3d", "flat", "video"]) {
+    await page.locator("#sc-fall-style").selectOption(style);
+    await page.evaluate(() => window.__player.seek(4));
+    await expect.poll(() => page.evaluate(() => window.__fall.barMarks.length)).toBeGreaterThan(0);
+    const marks = await page.evaluate(() => window.__fall.barMarks);
+    expect(marks.every((m) => m.size >= 10), style).toBe(true);
+    const nums = marks.map((m) => m.number);
+    expect(nums, style).toEqual([...nums.keys()].map((k) => nums[0] + k));
+  }
+});
+
 test("each view shows its own controls: the score's (zoom, names, settings, editing) not on the piano, the piano's not on the score", async ({ page }) => {
   await open(page);
   const scoreOnly = ["#sc-zoom", "#sc-follow", "#sc-names", "#sc-settings-toggle", "#sc-undo", "#sc-add", "#sc-status"];

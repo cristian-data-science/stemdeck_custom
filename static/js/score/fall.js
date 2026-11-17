@@ -406,6 +406,7 @@ export class FallView {
   }
 
   draw(t) {
+    this.barMarks = []; // the bar numbers drawn this frame (tests)
     this.lastT = t;
     const { w, h } = this.size;
     if (!w || !h) return;
@@ -726,12 +727,23 @@ export class FallView {
     return !!this.opts.dimStaff && staff === this.opts.dimStaff;
   }
 
+  /** A bar number at its line: on a dark tag, bright -- the reference for
+   *  the loop and for talking about the song (at 45 % white it was faint). */
   barNumber(g, number, x, y, size) {
-    g.font = `600 ${size}px Inter, system-ui, sans-serif`;
+    const text = String(number);
+    const fs = Math.round(size * 1.25);
+    g.font = `700 ${fs}px Inter, system-ui, sans-serif`;
     g.textAlign = "left";
     g.textBaseline = "bottom";
-    g.fillStyle = "rgba(255,255,255,0.45)";
-    g.fillText(String(number), x, y);
+    const w = g.measureText(text).width;
+    g.fillStyle = "rgba(10, 12, 24, 0.72)";
+    g.beginPath();
+    if (g.roundRect) g.roundRect(x - 3, y - fs - 2, w + 6, fs + 4, 4);
+    else g.rect(x - 3, y - fs - 2, w + 6, fs + 4);
+    g.fill();
+    g.fillStyle = "rgba(235, 240, 255, 0.92)";
+    g.fillText(text, x, y);
+    this.barMarks.push({ number, x, y, size: fs });
   }
 
   drawLoopFlat(g, t, w, fallH) {
