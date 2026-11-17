@@ -12,6 +12,7 @@ import { SmoothClock } from "../score/model.js";
 import { buildChart } from "./chart.js";
 import { buildHorn } from "./horn.js";
 import { HIT_X, SaxLane } from "./lane.js";
+import { barGrid } from "./beats.js";
 import { SAXES, around, breaths, fingering, concertRange, fitRange, melodyFrom, noteGroups, noteName, phrase, phrasingOf, pitchColor, skyline, slur, staffStep, written } from "./melody.js";
 import { MicPitch, judge } from "./mic.js";
 import { SaxSampler, SaxSynth } from "./synth.js";
@@ -1393,6 +1394,8 @@ async function start() {
     swam.info = await api("/api/sax/swam").catch(() => null);
     $("sx-engine-field").hidden = !swam.info?.available;
     state.presence = job.stem_presence || {};
+    // The song's beats and bars (the studio's beat grid), when it has them.
+    state.bars = barGrid(await api(`/api/jobs/${JOB}/beats`).catch(() => null));
   } catch (e) {
     status(`No se encontró la canción: ${e.message}`);
     return;
