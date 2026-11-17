@@ -89,11 +89,13 @@ def _beamed(group: list[Item]) -> str:
     return "".join(_item(x) for x in group)
 
 
-def _measure(m: EMeasure, harms: list[tuple[float, str, str]]) -> str:
+def _measure(
+    m: EMeasure, harms: list[tuple[float, str, str]], staves=(STAFF_TREBLE, STAFF_BASS)
+) -> str:
     parts = []
     if m.meter_change:
         parts.append(f'<scoreDef meter.count="{m.meter}" meter.unit="4"/>')
-    for staff in (STAFF_TREBLE, STAFF_BASS):
+    for staff in staves:
         parts.append(
             f'<staff n="{staff}"><layer n="1">{_layer(m.staves.get(staff, []))}</layer></staff>'
         )
@@ -105,8 +107,17 @@ def _measure(m: EMeasure, harms: list[tuple[float, str, str]]) -> str:
     return f'<measure n="{m.number}" xml:id="m{m.number}"{metcon}>{"".join(parts)}</measure>'
 
 
-def to_mei(eng: Engraved, chords: list[dict], *, bpm: int | None = None, title: str = "") -> str:
-    """`chords`: [{"beat": grid beat index, "text": label, "id": stable id}]."""
+def to_mei(
+    eng: Engraved,
+    chords: list[dict],
+    *,
+    bpm: int | None = None,
+    title: str = "",
+    part: str | None = None,
+) -> str:
+    """`chords`: [{"beat": grid beat index, "text": label, "id": stable id}].
+    `part`: one instrument (its name) on one treble staff, not the piano's two."""
+    staves = (STAFF_TREBLE,) if part else (STAFF_TREBLE, STAFF_BASS)
     by_measure: dict[int, list[tuple[float, str, str]]] = {}
     for c in chords:
         tick = c["beat"] * TPB
@@ -124,12 +135,17 @@ def to_mei(eng: Engraved, chords: list[dict], *, bpm: int | None = None, title: 
         f"<meiHead><fileDesc><titleStmt><title>{escape(title)}</title></titleStmt><pubStmt/></fileDesc></meiHead>"
         "<music><body><mdiv><score>"
         f'<scoreDef key.sig="{eng.key.mei_sig}" meter.count="{meter}" meter.unit="4"{tempo}>'
-        '<staffGrp symbol="brace" bar.thru="true">'
-        '<staffDef n="1" lines="5" clef.shape="G" clef.line="2"/>'
-        '<staffDef n="2" lines="5" clef.shape="F" clef.line="4"/>'
-        "</staffGrp></scoreDef><section>"
+        + (
+            f'<staffGrp><staffDef n="1" lines="5" clef.shape="G" clef.line="2"><label>{escape(part)}</label></staffDef></staffGrp>'
+            if part
+            else '<staffGrp symbol="brace" bar.thru="true">'
+            '<staffDef n="1" lines="5" clef.shape="G" clef.line="2"/>'
+            '<staffDef n="2" lines="5" clef.shape="F" clef.line="4"/>'
+            "</staffGrp>"
+        )
+        + "</scoreDef><section>"
     )
-    body = "".join(_measure(m, by_measure.get(m.number, [])) for m in eng.measures)
+    body = "".join(_measure(m, by_measure.get(m.number, []), staves) for m in eng.measures)
     if not eng.measures:
         body = (
             '<measure n="1"><staff n="1"><layer n="1"><mRest/></layer></staff>'

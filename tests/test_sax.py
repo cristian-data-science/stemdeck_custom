@@ -610,3 +610,52 @@ def test_swam_plays_the_practice_speed_itself():
     assert next(t for t, v in cc if v >= top - 1) - 6.0 <= 0.08
     with pytest.raises(ValueError):
         SwamBody(sax="alto", duration=6, notes=notes, speed=0.1)
+
+
+def test_the_saxophone_part_is_written_for_the_saxophone(monkeypatch, tmp_path):
+    """The line as the page plays it, engraved on one treble staff in the
+    song's bars and written for the saxophone: an alto reads a major sixth
+    above what sounds, its key too, with MusicXML's <transpose> back."""
+    import json
+    import re
+
+    from fastapi.testclient import TestClient
+
+    from app.core.models import Job
+    from app.core.registry import _jobs
+    from app.main import app
+    from app.score import store
+
+    job = "abcdefabcd21"
+    monkeypatch.setattr(store, "JOBS_DIR", tmp_path)
+    _jobs[job] = Job(id=job, status="done", title="Balada", key="D", scale="Natural Minor", bpm=60)
+    stems = tmp_path / job / "stems"
+    stems.mkdir(parents=True)
+    # 60 BPM in 4 from 0 s: a bar every 4 s.
+    beats = [float(i) for i in range(40)]
+    (stems / "beats.json").write_text(json.dumps({"beats": beats, "bars": [{"beat": 0, "beats_per_bar": 4}], "bpm": 60}))
+    # D minor: D E F G A, quarter notes (as they sound).
+    line = [{"start": float(i), "end": i + 0.95, "midi": m} for i, m in enumerate([62, 64, 65, 67, 69, 67, 65, 64])]
+    c = TestClient(app)
+    try:
+        r = c.post(f"/api/jobs/{job}/sax/export.musicxml", json={"sax": "alto", "notes": line})
+        assert r.status_code == 200
+        assert "saxo%20alto.musicxml" in r.headers["content-disposition"]
+        xml = r.text
+        assert "<part-name>Saxofón alto en Mi♭</part-name>" in xml
+        assert "<staves>" not in xml and "<sign>F</sign>" not in xml  # one treble staff
+        assert re.search(r"<fifths>(-?\d+)", xml).group(1) == "2"  # D minor sounds: B minor written
+        assert "<transpose><diatonic>-5</diatonic><chromatic>-9</chromatic></transpose>" in xml
+        steps = re.findall(r"<step>([A-G])</step>(?:<alter>(-?\d)</alter>)?<octave>(\d)", xml)
+        assert [f"{s}{'#' if a == '1' else ''}{o}" for s, a, o in steps[:5]] == ["B4", "C#5", "D5", "E5", "F#5"]
+        assert xml.count('<measure number="') == 2
+        # The tenor: a major ninth above, an octave down in <transpose>.
+        r = c.post(f"/api/jobs/{job}/sax/export.musicxml", json={"sax": "tenor", "notes": line})
+        assert "<octave-change>-1</octave-change>" in r.text
+        # MEI for the page to print: one staff, its name.
+        r = c.post(f"/api/jobs/{job}/sax/export.mei", json={"sax": "alto", "notes": line})
+        assert r.status_code == 200 and r.text.count("<staffDef") == 1 and "Saxofón alto" in r.text
+        assert c.post(f"/api/jobs/{job}/sax/export.pdf", json={"sax": "alto", "notes": line}).status_code == 404
+        assert c.post(f"/api/jobs/{job}/sax/export.musicxml", json={"sax": "alto", "notes": []}).status_code == 422
+    finally:
+        _jobs.pop(job, None)

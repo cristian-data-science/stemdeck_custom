@@ -1500,8 +1500,18 @@ function wire() {
   };
   // «⚙ Notas» (a narrow screen): the notation's settings folded into a menu.
   const notation = (open) => {
-    $("sx-notation-menu").classList.toggle("open", open);
+    const menu = $("sx-notation-menu");
+    menu.classList.toggle("open", open);
     $("sx-notation-toggle").setAttribute("aria-expanded", String(open));
+    if (!open) return;
+    // Opened toward the side with room: the button may sit at the right of
+    // the header or, wrapped, at its left (the menu then went off screen).
+    menu.style.left = menu.style.right = "";
+    const r = menu.getBoundingClientRect();
+    if (r.left < 8) {
+      menu.style.left = "0";
+      menu.style.right = "auto";
+    }
   };
   $("sx-notation-toggle").onclick = () => notation(!$("sx-notation-menu").classList.contains("open"));
   document.addEventListener("pointerdown", (e) => {
@@ -1520,6 +1530,47 @@ function wire() {
   $("sx-horn-hide").onclick = () => hornHidden(true);
   $("sx-horn-show").onclick = () => hornHidden(false);
   hornHidden(!!prefs.hornHidden);
+  // The saxophone's part, written out: printed (PDF) or for MuseScore.
+  const part = async (fmt) => {
+    if (!state.notes.length) return;
+    const res = await fetch(`/api/jobs/${JOB}/sax/export.${fmt}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sax: prefs.sax, stem: state.stems[0], notes: state.notes.map((n) => ({ start: Math.round(n.start * 1000) / 1000, end: Math.round(n.end * 1000) / 1000, midi: n.midi })) }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
+    return res;
+  };
+  $("sx-part-xml").onclick = async () => {
+    try {
+      const res = await part("musicxml");
+      const name = decodeURIComponent((res.headers.get("Content-Disposition") || "").split("''")[1] || "saxo.musicxml");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(await res.blob());
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    } catch (e) {
+      status(`No se pudo descargar la parte: ${e.message}`);
+      setTimeout(() => status(""), 4000);
+    }
+  };
+  $("sx-part-pdf").onclick = async () => {
+    const b = $("sx-part-pdf");
+    b.disabled = true;
+    b.textContent = "⟳ Preparando…";
+    try {
+      const mei = await (await part("mei")).text();
+      const { printPart } = await import("./print.js");
+      state.printedPages = await printPart(mei, $("sx-print"));
+    } catch (e) {
+      status(`No se pudo preparar la parte: ${e.message}`);
+      setTimeout(() => status(""), 4000);
+    } finally {
+      b.disabled = false;
+      b.textContent = "🖨 PDF";
+    }
+  };
   // «🎚 Sonido»: what is set once (the saxophone, its room, its tone, the
   // expression), in a menu of its own.
   const soundMenu = (open) => {

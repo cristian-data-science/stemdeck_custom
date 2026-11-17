@@ -231,3 +231,16 @@ body.sx-horn-hidden .sx-horn { display: none; }
 
 /* «Varias»: several notes picked at once. */
 .sx-editbar button[aria-pressed="true"] { border-color: #f4b740; color: #fff; background: rgba(244, 183, 64, 0.16); }
+
+/* The saxophone's part on paper (print.js): shown only when printing. */
+.sx-part-btns { display: inline-flex; gap: 6px; }
+.sx-print { display: none; }
+@media print {
+  @page { size: A4; margin: 0; }
+  html, body { background: #fff !important; height: auto; overflow: visible; }
+  body > :not(.sx-print) { display: none !important; }
+  .sx-print { display: block; }
+  .sx-print-page { width: 210mm; height: 297mm; page-break-after: always; break-after: page; }
+  .sx-print-page:last-child { page-break-after: auto; break-after: auto; }
+  .sx-print-page svg { width: 100%; height: 100%; }
+}

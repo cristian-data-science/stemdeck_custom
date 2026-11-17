@@ -25,7 +25,7 @@ import threading
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from app.core.config import JOB_ID_RE, STEM_NAMES
@@ -419,3 +419,97 @@ async def swam_audio(job_id: str, key: str) -> FileResponse:
     return FileResponse(
         path, media_type="audio/flac", headers={"Cache-Control": "max-age=31536000, immutable"}
     )
+
+
+# -- the saxophone's part, written out (MusicXML for MuseScore & co., MEI for
+# the page to print) -----------------------------------------------------------
+
+# name, semitones from what sounds to what is written, and MusicXML's
+# <transpose> back (diatonic, chromatic, octave change).
+SAX_PARTS = {
+    "alto": ("Saxofón alto en Mi♭", 9, (-5, -9, 0)),
+    "tenor": ("Saxofón tenor en Si♭", 14, (-1, -2, -1)),
+    "soprano": ("Saxofón soprano en Si♭", 2, (-1, -2, 0)),
+    "baritone": ("Saxofón barítono en Mi♭", 21, (-5, -9, -1)),
+}
+
+
+class PartNote(BaseModel):
+    start: float = Field(ge=0, le=3600)
+    end: float = Field(ge=0, le=3600)
+    midi: int = Field(ge=20, le=110)  # as it sounds
+
+
+class PartBody(BaseModel):
+    sax: str = Field(pattern=r"^(alto|tenor|soprano|baritone)$")
+    notes: list[PartNote] = Field(min_length=1, max_length=8000)
+    stem: str | None = Field(default=None, pattern=r"^[a-z_]{2,20}$")
+
+
+def sax_part(job, body: PartBody, fmt: str) -> str:
+    """The line as the page plays it (with its edits), engraved on one treble
+    staff in the song's bars, written for the saxophone: its notes and its
+    key transposed (an alto reads a major sixth above what sounds)."""
+    from app.score.engrave import Settings, engrave
+    from app.score.keys import key_from_id
+    from app.score.mei import to_mei
+    from app.score.musicxml import to_musicxml
+    from app.score.service import _grid_inputs, resolve_key
+
+    name, shift, transpose = SAX_PARTS[body.sax]
+    concert = [
+        {
+            "id": f"s{i:05d}",
+            "start": n.start,
+            "end": max(n.end, n.start + 0.05),
+            "midi": n.midi,
+            "hand": "R",
+        }
+        for i, n in enumerate(sorted(body.notes, key=lambda n: n.start))
+    ]
+    key, _ = resolve_key(job, concert, "auto")
+    written_key = (
+        key_from_id(f"{(key.tonic_pc + shift) % 12}:{'minor' if key.minor else 'major'}") or key
+    )
+    written = [{**n, "midi": n["midi"] + shift} for n in concert]
+    beats, bars, _, info = _grid_inputs(job, body.stem or "vocals", "song")
+    settings = Settings.from_dict({"hands": "split", "chords": False, "pulse": "song"})
+    eng = engrave(
+        written,
+        beats,
+        bars,
+        written_key,
+        settings,
+        bpm=job.bpm,
+        downbeat_times=info.get("downbeats") or None,
+    )
+    title = f"{job.title or ''} — {name}"
+    if fmt == "mei":
+        return to_mei(eng, [], bpm=job.bpm, title=title, part=name)
+    return to_musicxml(
+        eng, [], bpm=job.bpm, title=title, part={"name": name, "transpose": transpose}
+    )
+
+
+@router.post("/jobs/{job_id}/sax/export.{fmt}")
+async def sax_export(job_id: str, fmt: str, body: PartBody) -> Response:
+    if fmt not in ("musicxml", "mei"):
+        raise HTTPException(status_code=404, detail="no such format")
+    job = registry_get(job_id) if JOB_ID_RE.match(job_id) else None
+    if job is None or job.status != "done":
+        raise HTTPException(status_code=404, detail="job not found")
+    text = await asyncio.to_thread(sax_part, job, body, fmt)
+    media = "application/vnd.recordare.musicxml+xml" if fmt == "musicxml" else "application/mei+xml"
+    stem = re.sub(r"[^\w\- ]+", "", job.title or job_id).strip()[:80] or job_id
+    filename = f"{stem} - saxo {body.sax}.{fmt}"
+    return Response(
+        text,
+        media_type=media,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{_quote(filename)}"},
+    )
+
+
+def _quote(s: str) -> str:
+    from urllib.parse import quote
+
+    return quote(s)

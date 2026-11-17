@@ -34,6 +34,10 @@
         <button class="sx-menu-toggle sx-fold-toggle" id="sx-notation-toggle" type="button" aria-haspopup="true" aria-expanded="false"
                 title="Cómo se escriben las notas: para el saxo o como suenan, el fraseo y los nombres">⚙ Notas ▾</button>
         <div class="sx-fold-menu" id="sx-notation-menu">
+          <span class="sx-part-btns" role="group" aria-label="La parte del saxo">
+            <button type="button" class="sx-menu-toggle" id="sx-part-pdf" title="Imprimir la parte del saxo (o guardarla como PDF): escrita para tu saxo, en los compases de la canción, con lo que editaste">🖨 PDF</button>
+            <button type="button" class="sx-menu-toggle" id="sx-part-xml" title="Descargar la parte del saxo en MusicXML, para abrirla en MuseScore, Sibelius o Finale (escrita para tu saxo, con su transposición)">⬇ MusicXML</button>
+          </span>
           <label class="sx-field" title="Para el saxo: la nota que lees y tocas (un saxo Alto lee una sexta mayor más arriba de lo que suena). Como suenan: las notas reales de la canción, las que tocaría un piano">
             Notas
             <select id="sx-view">
@@ -216,6 +220,7 @@
       </div>
     </footer>
 
+    <div class="sx-print" id="sx-print" aria-hidden="true"></div>
     <audio id="sx-audio" preload="auto"></audio>
     <script type="module" src="/js/sax/main.js"></script>
   </body>

@@ -55,6 +55,15 @@ def _harmony(c: dict, offset: int) -> str:
     )
 
 
+def _transpose(part: dict) -> str:
+    t = part.get("transpose")
+    if not t:
+        return ""
+    diatonic, chromatic, octave = t
+    oc = f"<octave-change>{octave}</octave-change>" if octave else ""
+    return f"<transpose><diatonic>{diatonic}</diatonic><chromatic>{chromatic}</chromatic>{oc}</transpose>"
+
+
 def _notes(it: Item, staff: int, beam_state: dict) -> str:
     voice = 1 if staff == STAFF_TREBLE else 5
     out = []
@@ -116,8 +125,17 @@ def _notes(it: Item, staff: int, beam_state: dict) -> str:
 
 
 def to_musicxml(
-    eng: Engraved, chords: list[dict], *, bpm: int | None = None, title: str = ""
+    eng: Engraved,
+    chords: list[dict],
+    *,
+    bpm: int | None = None,
+    title: str = "",
+    part: dict | None = None,
 ) -> str:
+    """`part`: one instrument on one treble staff instead of the piano's two:
+    {"name": its name, "transpose": (diatonic, chromatic, octave change)
+    from what is written to what sounds}."""
+    staves = (STAFF_TREBLE,) if part else (STAFF_TREBLE, STAFF_BASS)
     table = spelling_table(eng.key)
     for c in chords:
         if c.get("root") is not None:
@@ -129,7 +147,7 @@ def to_musicxml(
         '"http://www.musicxml.org/dtds/partwise.dtd">'
         '<score-partwise version="4.0">'
         f"<work><work-title>{escape(title)}</work-title></work>"
-        '<part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>'
+        f'<part-list><score-part id="P1"><part-name>{escape(part["name"]) if part else "Piano"}</part-name></score-part></part-list>'
         '<part id="P1">'
     ]
     for m in eng.measures:
@@ -138,9 +156,15 @@ def to_musicxml(
             attrs = (
                 f"<attributes><divisions>{TPB}</divisions><key><fifths>{eng.key.fifths}</fifths>"
                 f"<mode>{'minor' if eng.key.minor else 'major'}</mode></key>"
-                f"<time><beats>{m.meter}</beats><beat-type>4</beat-type></time><staves>2</staves>"
-                '<clef number="1"><sign>G</sign><line>2</line></clef>'
-                '<clef number="2"><sign>F</sign><line>4</line></clef></attributes>'
+                f"<time><beats>{m.meter}</beats><beat-type>4</beat-type></time>"
+                + (
+                    '<clef number="1"><sign>G</sign><line>2</line></clef>' + _transpose(part)
+                    if part
+                    else "<staves>2</staves>"
+                    '<clef number="1"><sign>G</sign><line>2</line></clef>'
+                    '<clef number="2"><sign>F</sign><line>4</line></clef>'
+                )
+                + "</attributes>"
             )
             if bpm:
                 attrs += (
@@ -153,7 +177,7 @@ def to_musicxml(
         implicit = ' implicit="yes"' if m.n_beats < m.meter else ""
         body = [f'<measure number="{m.number}"{implicit}>', attrs]
         state: dict = {}
-        for staff in (STAFF_TREBLE, STAFF_BASS):
+        for staff in staves:
             items = m.staves.get(staff, [])
             for it in items:
                 if it.beam is not None:
@@ -173,7 +197,7 @@ def to_musicxml(
                     if it.tick <= tick < it.tick + it.ticks:
                         body.append(_harmony(c, tick - it.tick))
                 body.append(_notes(it, staff, state))
-            if staff == STAFF_TREBLE:
+            if staff == STAFF_TREBLE and len(staves) > 1:
                 body.append(f"<backup><duration>{m.end_tick - m.start_tick}</duration></backup>")
         body.append("</measure>")
         parts.append("".join(body))

@@ -1741,6 +1741,14 @@ test("🎷 Saxo on a tablet: the notation folds into «⚙ Notas» (one header r
   await page.locator("#sx-view").selectOption("written");
   await page.keyboard.press("Escape");
   await expect(page.locator("#sx-view")).toBeHidden();
+  // Narrower, the button wraps to the left of the header: the menu opens toward the room there is.
+  await page.setViewportSize({ width: 700, height: 768 });
+  await page.locator("#sx-notation-toggle").click();
+  const menu = await page.locator("#sx-notation-menu").boundingBox();
+  expect(menu.x).toBeGreaterThanOrEqual(0);
+  expect(menu.x + menu.width).toBeLessThanOrEqual(700);
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 1024, height: 768 });
   expect((await page.locator(".sx-chart svg").boundingBox()).height).toBeGreaterThan(380);
   expect(tall).toBeGreaterThan(380);
   // The fingering panel put away: the staff takes the whole width; back with the tab.
@@ -1831,6 +1839,36 @@ test("🎷 Saxo ✏️ Editar, varias notas: picked with Mayús or «Varias» or
   await page.locator("#sx-multi").click();
   await page.keyboard.press("Control+a");
   expect((await picked()).length).toBe(count);
+  expect(errors).toEqual([]);
+});
+
+test("🎷 Saxo: the part written out, MusicXML downloaded and printed as A4 pages (with the edits)", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const JOB = "5c0de0000001";
+  await page.request.put(`/api/jobs/${JOB}/sax/edits`, { data: { set: "piano|clean", edits: {} } });
+  await page.goto(`/sax/?job=${JOB}&stems=piano`);
+  await page.waitForFunction(() => window.__sax?.notes?.length > 5);
+  // MusicXML: a file named for the song and the saxophone, one treble staff.
+  const [download] = await Promise.all([page.waitForEvent("download"), page.locator("#sx-part-xml").click()]);
+  expect(download.suggestedFilename()).toMatch(/saxo alto\.musicxml$/);
+  const xml = (await import("node:fs")).readFileSync(await download.path(), "utf8");
+  expect(xml).toContain("<part-name>Saxofón alto en Mi♭</part-name>");
+  expect(xml).not.toContain("<staves>");
+  // PDF: the print dialog with the part laid out in pages (print itself stubbed).
+  await page.evaluate(() => { window.__printed = 0; window.print = () => { window.__printed += 1; }; });
+  await page.locator("#sx-part-pdf").click();
+  await expect.poll(() => page.evaluate(() => window.__printed), { timeout: 20000 }).toBe(1);
+  const pages = await page.locator("#sx-print .sx-print-page svg").count();
+  expect(pages).toBeGreaterThanOrEqual(1);
+  expect(await page.locator("#sx-print .note").count()).toBeGreaterThan(5);
+  await expect(page.locator("#sx-part-pdf")).toHaveText("🖨 PDF");
+  // Printed: only the part, on A4.
+  await page.emulateMedia({ media: "print" });
+  await expect(page.locator(".sx-stage")).toBeHidden();
+  await expect(page.locator("#sx-print")).toBeVisible();
+  await page.emulateMedia({ media: "screen" });
+  await expect(page.locator("#sx-print")).toBeHidden();
   expect(errors).toEqual([]);
 });
 
