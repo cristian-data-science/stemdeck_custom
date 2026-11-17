@@ -5,7 +5,13 @@
 // thrown back toward the horn while a note sounds.
 
 import { beatIndexAt } from "./beats.js";
-import { noteName, pitchColor, staffStep, written } from "./melody.js";
+import { noteName, staffStep, written } from "./melody.js";
+
+// One colour for the notes coming and gold for the one sounding (as the
+// strip above and the fingering chart): a colour per pitch made the lane a
+// rainbow to decode; what matters is which note is now. Its height on the
+// staff and its name say which note it is.
+const tone = (sounding, light) => (sounding ? `hsl(41, 92%, ${light}%)` : `hsl(224, 78%, ${light}%)`);
 
 const MIN_STEP = -6; // A3 (below the low Bb, ledger room)
 const MAX_STEP = 17; // A6
@@ -196,12 +202,12 @@ export class SaxLane {
       const left = Math.max(HIT_X, x0);
       const width = Math.max(4, x1 - left);
       const near = Math.max(0, 1 - (x0 - HIT_X) / (pps * 0.6)); // brighter as it arrives
-      const col = pitchColor(wr, active ? 66 : 56);
+      const col = tone(active, active ? 62 : 58);
       ctx.save();
-      ctx.shadowColor = pitchColor(wr, 60);
+      ctx.shadowColor = tone(active, 60);
       ctx.shadowBlur = active ? 26 : 6 + near * 12;
       const grad = ctx.createLinearGradient(0, yy - barH / 2, 0, yy + barH / 2);
-      grad.addColorStop(0, pitchColor(wr, active ? 80 : 70));
+      grad.addColorStop(0, tone(active, active ? 76 : 72));
       grad.addColorStop(1, col);
       ctx.fillStyle = grad;
       roundRect(ctx, left, yy - barH / 2, width, barH, Math.min(barH / 2, 9));
@@ -239,7 +245,7 @@ export class SaxLane {
 
     // The hit line by the horn.
     const hl = ctx.createLinearGradient(HIT_X - 10, 0, HIT_X + 10, 0);
-    const c = sounding ? pitchColor(sounding.wr, 62) : "rgba(255, 200, 100, 0.6)";
+    const c = sounding ? tone(true, 62) : "rgba(255, 200, 100, 0.6)";
     hl.addColorStop(0, "rgba(0,0,0,0)");
     hl.addColorStop(0.5, c);
     hl.addColorStop(1, "rgba(0,0,0,0)");
@@ -255,15 +261,15 @@ export class SaxLane {
           vx: -40 - Math.random() * 120,
           vy: (Math.random() - 0.5) * 120,
           life: 0.6 + Math.random() * 0.5,
-          color: pitchColor(sounding.wr, 70),
+          color: tone(true, 70),
         });
       }
     }
     if (sounding) {
       ctx.save();
-      ctx.shadowColor = pitchColor(sounding.wr, 60);
+      ctx.shadowColor = tone(true, 60);
       ctx.shadowBlur = 30;
-      ctx.fillStyle = pitchColor(sounding.wr, 75);
+      ctx.fillStyle = tone(true, 75);
       ctx.beginPath();
       ctx.arc(HIT_X, sounding.yy, barH * 0.55, 0, Math.PI * 2);
       ctx.fill();
