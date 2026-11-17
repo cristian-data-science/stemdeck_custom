@@ -18,18 +18,22 @@ async function resetServer(request) {
   });
 }
 
-// Note names are off by default; most tests read or click the pills, so they
-// open the page with names on (once: a reload keeps what the test chose).
+// The score opens without note names; most tests read or click the pills,
+// so they turn them on as a player does («Nombres»; a reload keeps them).
 async function open(page, { names = true } = {}) {
-  await page.addInitScript((on) => {
+  await page.addInitScript(() => {
     if (sessionStorage.getItem("e2e.seeded")) return;
     sessionStorage.setItem("e2e.seeded", "1");
     localStorage.removeItem("stemdeck.score.view");
-    if (on) localStorage.setItem("stemdeck.score.view", JSON.stringify({ noteNames: true }));
-  }, names);
+  });
   await page.goto(PAGE);
   await expect(page.locator("#sc-score g.note").first()).toBeVisible();
   await page.waitForFunction(() => window.__score?.ctx?.timeline?.length > 0);
+  if (names) {
+    const spelling = await page.evaluate(() => window.__score.data.names);
+    await page.locator("#sc-names").selectOption(spelling);
+    await expect(page.locator("#sc-score .sd-pill").first()).toBeVisible();
+  }
 }
 
 const notes = (page) => page.evaluate(() => window.__score.notes.map((n) => ({ ...n, heads: undefined })));
@@ -1122,6 +1126,24 @@ test("Controles ▴/▾ hides every control but the playback line, remembered", 
 });
 
 // ── practice ────────────────────────────────────────────────────────────
+
+test("opened again, the score comes back as the score without names (a reload keeps the view)", async ({ page }) => {
+  await open(page);
+  await page.locator("#sc-view-toggle").click();
+  await expect(page.locator("#sc-fall")).toBeVisible();
+  await page.reload(); // F5: the view it was in
+  await expect(page.locator("#sc-fall")).toBeVisible();
+  await expect(page.locator("#sc-view-toggle")).toHaveText("𝄞 Partitura");
+  // Opened again (from the mixer's 𝄞): the score, no names; the piano a tap away.
+  await page.goto(PAGE);
+  await expect(page.locator("#sc-score g.note").first()).toBeVisible();
+  await expect(page.locator("#sc-fall")).toBeHidden();
+  await expect(page.locator("#sc-view-toggle")).toHaveText("🎹 Piano");
+  await expect(page.locator("#sc-names")).toHaveValue("none");
+  await expect(page.locator("#sc-score .sd-pill")).toHaveCount(0);
+  await page.locator("#sc-view-toggle").click();
+  await expect(page.locator("#sc-fall")).toBeVisible();
+});
 
 test("?t= opens the song at that moment (from the mixer's 𝄞), else where it was left", async ({ page }) => {
   await page.goto(`${PAGE}&t=12.5`);

@@ -87,6 +87,10 @@ const LS = "stemdeck.score.view";
 // ?t=<seconds>: where to open the song (the mixer's 𝄞 passes the moment it
 // was playing, so the score opens there and not at 0:00).
 const START_T = params.get("t");
+// Opened (from the mixer's 𝄞, the list, a link): the score, its note names
+// off; the piano with falling notes is one tap on «🎹 Piano». Only a reload
+// (F5) comes back to the view it was in.
+const RELOADED = performance.getEntriesByType?.("navigation")?.[0]?.type === "reload";
 
 const state = {
   data: null,
@@ -118,6 +122,7 @@ const state = {
     midiSound: false,
     midiMode: "free",
     ...readView(),
+    ...(RELOADED ? {} : { fall: false, noteNames: false }),
   },
   // What this song remembers in this browser (practice.js): position, what
   // is heard, speed, the loop, the hand practised.
@@ -2487,7 +2492,8 @@ function wireControls() {
     const v = $("sc-names").value;
     state.view.noteNames = v !== "none";
     writeView();
-    if (v === "none") draw();
+    // Names shown again in the spelling the score already has: only drawn.
+    if (v === "none" || v === state.data.names) draw();
     else putSettings({ names: v });
   };
   $("sc-undo").onclick = undo;
