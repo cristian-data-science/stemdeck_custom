@@ -2457,10 +2457,25 @@ function wireControls() {
     state.view.follow = $("sc-follow").checked;
     writeView();
   };
-  $("sc-zoom").onchange = () => {
+  // «Zoom»: while the slider moves, what is drawn is scaled at once (a
+  // preview: the lines break where they did); let go, the score is engraved
+  // again at that size (~0.5 s of Verovio on a long song) and the page goes
+  // back to where the song is.
+  $("sc-zoom").oninput = () => {
+    const f = Number($("sc-zoom").value) / state.view.zoom;
+    const host = $("sc-score");
+    host.classList.add("sd-zooming");
+    for (const svg of host.querySelectorAll(":scope > svg")) svg.style.transform = `scale(${f})`;
+  };
+  $("sc-zoom").onchange = async () => {
     state.view.zoom = Number($("sc-zoom").value);
     writeView();
-    draw();
+    await draw();
+    $("sc-score").classList.remove("sd-zooming");
+    state.lastSys = null;
+    state.forceFollow = true;
+    follow(clock.update(player.time, performance.now(), player.playing, player.rate));
+    state.forceFollow = false;
   };
   $("sc-grid").onchange = () => putSettings({ grid: $("sc-grid").value });
   $("sc-split").onchange = () => putSettings({ split: Number($("sc-split").value) });

@@ -1127,6 +1127,27 @@ test("Controles ▴/▾ hides every control but the playback line, remembered", 
 
 // ── practice ────────────────────────────────────────────────────────────
 
+test("Zoom: dragged, the drawing is scaled at once; let go, engraved again at that size, back where the song is", async ({ page }) => {
+  await open(page);
+  const width = async () => (await page.locator("#sc-score svg").first().boundingBox()).width;
+  const w0 = await width();
+  const rendered = await page.evaluate(() => document.body.dataset.rendered);
+  // Dragging (input events only): scaled, not engraved again.
+  await page.evaluate(() => {
+    const z = document.getElementById("sc-zoom");
+    z.value = String(Number(z.value) + 14);
+    z.dispatchEvent(new Event("input"));
+  });
+  expect(await page.evaluate(() => document.body.dataset.rendered)).toBe(rendered);
+  expect(await width()).toBeGreaterThan(w0 * 1.2);
+  // Let go: engraved again (the scale gone), the cursor back on the song's system.
+  await page.evaluate(() => document.getElementById("sc-zoom").dispatchEvent(new Event("change")));
+  await expect.poll(() => page.evaluate(() => document.body.dataset.rendered)).not.toBe(rendered);
+  await expect.poll(() => page.evaluate(() => document.querySelector("#sc-score > svg").style.transform)).toBe("");
+  await expect(page.locator("#sc-score")).not.toHaveClass(/sd-zooming/);
+  expect(await page.evaluate(() => window.__score.view.zoom)).toBe(56);
+});
+
 test("opened again, the score comes back as the score without names (a reload keeps the view)", async ({ page }) => {
   await open(page);
   await page.locator("#sc-view-toggle").click();

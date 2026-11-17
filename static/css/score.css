@@ -114,6 +114,10 @@ kbd {
 /* The cursor: a layer of its own under the notes (render.js placeCursor). */
 .sc-score { position: relative; }
 .sc-score svg { position: relative; z-index: 1; }
+/* «Zoom» being dragged: the drawing scaled at once, engraved again on release. */
+.sc-score.sd-zooming { overflow: hidden; }
+.sc-score.sd-zooming > svg { transform-origin: 0 0; }
+.sc-score.sd-zooming .sd-cursor { visibility: hidden; }
 .sc-score .sd-cursor { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; will-change: transform;
   background: rgba(228,87,46,0.18); border: 1px solid rgba(228,87,46,0.75); box-sizing: border-box; }
 .sc-score g.harm { cursor: pointer; }

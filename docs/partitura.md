@@ -468,6 +468,10 @@ banda (9 min), una grabación de piano solo (3:45) y la canción de calibración
   rectángulo dentro del SVG: moverlo en cada cuadro repintaba todo el grabado (38 000 elementos en
   una canción de 3304 notas). Medido ahí mientras suena: el 5 % de los cuadros más lentos pasó de
   33 ms (un cuadro perdido) a 16,8 ms (ninguno).
+- **Zoom.** Mientras se arrastra el control, lo dibujado se escala al instante (una vista
+  previa: los renglones se cortan donde estaban); al soltarlo la partitura se graba de nuevo a ese
+  tamaño (~0,5 s de Verovio en una canción de 3304 notas, 0,75 s en total) y la página vuelve al
+  renglón donde va la canción. Antes no se veía nada hasta soltar.
 - **Cuánto suena cada nota.** Al reproducir (MIDI y Pianoteq), cada nota suena hasta donde el
   pianista soltó la tecla, según lo oyó el modelo. No hasta donde está dibujada: cada pentagrama
   se dibuja a una sola voz, así que una nota sostenida se dibuja solo hasta la siguiente nota de
