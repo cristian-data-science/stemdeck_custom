@@ -25,6 +25,8 @@ async function open(page, { names = true } = {}) {
     if (sessionStorage.getItem("e2e.seeded")) return;
     sessionStorage.setItem("e2e.seeded", "1");
     localStorage.removeItem("stemdeck.score.view");
+    // «🎼 Ajustes» open: most tests change the transcription's settings.
+    localStorage.setItem("stemdeck.score.view", JSON.stringify({ panelSettings: true }));
   });
   await page.goto(PAGE);
   await expect(page.locator("#sc-score g.note").first()).toBeVisible();
@@ -1097,17 +1099,50 @@ test("piano view style: 3D by default, Plano on request, remembered", async ({ p
   expect(await page.evaluate(() => window.__fall.opts.style)).toBe("flat");
 });
 
-test("the score's settings bar stays at the top while scrolling down the score", async ({ page }) => {
+test("the editing row stays at the top while scrolling down the score", async ({ page }) => {
   await page.setViewportSize({ width: 1100, height: 500 });
   await open(page);
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await page.waitForTimeout(300);
   const box = (s) => page.evaluate((s) => { const b = document.querySelector(s).getBoundingClientRect(); return { top: Math.round(b.top), bottom: Math.round(b.bottom) }; }, s);
-  const [top, transport, tools] = [await box(".sc-top"), await box(".sc-transport"), await box(".sc-tools")];
+  const [top, transport, tools] = [await box(".sc-top"), await box(".sc-transport"), await box(".sc-editrow")];
   expect(await page.evaluate(() => scrollY)).toBeGreaterThan(0);
   expect(top.top).toBe(0);
   expect(transport.top).toBe(top.bottom);
   expect(tools.top).toBe(transport.bottom);
+});
+
+test("the menu in order: the transcription's settings folded under «🎼 Ajustes» (remembered), the exports in one menu, editing beside the status", async ({ page }) => {
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem("e2e.fresh")) return;
+    sessionStorage.setItem("e2e.fresh", "1");
+    localStorage.removeItem("stemdeck.score.view");
+  });
+  await page.goto(PAGE);
+  await page.waitForFunction(() => window.__score?.ctx?.timeline?.length > 0);
+  // Folded at first: the score is nearer the top.
+  await expect(page.locator("#sc-grid")).toBeHidden();
+  await expect(page.locator("#sc-settings-toggle")).toHaveText("🎼 Ajustes ▾");
+  const folded = (await page.locator("#sc-scroll").boundingBox()).y;
+  await page.locator("#sc-settings-toggle").click();
+  await expect(page.locator("#sc-grid")).toBeVisible();
+  expect((await page.locator("#sc-scroll").boundingBox()).y).toBeGreaterThan(folded + 30);
+  await page.reload();
+  await page.waitForFunction(() => window.__score?.data);
+  await expect(page.locator("#sc-grid")).toBeVisible(); // remembered
+  await page.locator("#sc-settings-toggle").click();
+  await expect(page.locator("#sc-grid")).toBeHidden();
+  // The names are a matter of the view: beside Zoom, not in the settings.
+  await expect(page.locator("#sc-names")).toBeVisible();
+  // Editing and the status on one row, always at hand.
+  for (const id of ["#sc-undo", "#sc-add", "#sc-status"]) await expect(page.locator(id)).toBeVisible();
+  // «⬇ Exportar»: the four downloads in one menu, closed again with Esc.
+  await expect(page.locator("#sc-dl-mid")).toBeHidden();
+  await page.locator("#sc-export-toggle").click();
+  for (const id of ["#sc-dl-mid", "#sc-dl-raw", "#sc-dl-xml", "#sc-print"]) await expect(page.locator(id)).toBeVisible();
+  expect(await page.locator("#sc-dl-xml").getAttribute("href")).toContain("export.musicxml");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#sc-dl-mid")).toBeHidden();
 });
 
 test("Controles ▴/▾ hides every control but the playback line, remembered", async ({ page }) => {

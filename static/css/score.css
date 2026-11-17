@@ -44,7 +44,21 @@ html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: va
 .sc-transport { position: sticky; top: var(--sc-top-h, 53px); z-index: 15; background: var(--bg-2); }
 /* The score's own settings stay in reach while scrolling down the score; heights are
    measured live (main.js), since every bar wraps to more rows on a tablet. */
-.sc-tools { position: sticky; top: calc(var(--sc-top-h, 53px) + var(--sc-transport-h, 52px)); z-index: 14; }
+.sc-editrow { position: sticky; top: calc(var(--sc-top-h, 53px) + var(--sc-transport-h, 52px)); z-index: 14;
+  justify-content: space-between; padding-top: 4px; padding-bottom: 4px; }
+.sc-editrow .sc-status { padding: 0; min-height: 0; flex: 1 1 260px; }
+.sc-edit-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* «🎼 Ajustes»: folded away until asked for (main.js setSettings). */
+.sc-tools { display: none; background: var(--bg-2); }
+.sc-settings-open .sc-tools { display: flex; }
+.sc-settings-toggle-on, #sc-settings-toggle[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
+/* «⬇ Exportar» */
+.sc-menu-wrap { position: relative; }
+.sc-export-menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; display: grid; gap: 6px; min-width: 170px;
+  padding: 10px; border-radius: 10px; background: var(--panel); border: 1px solid var(--border-strong);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5); }
+.sc-export-menu[hidden] { display: none; }
+.sc-export-menu .sc-btn { text-align: left; }
 .sc-time { font-family: var(--font-mono); font-size: 12px; color: var(--fg-2); min-width: 90px; }
 #sc-seek { flex: 1 1 200px; accent-color: var(--accent); }
 .sc-field { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
@@ -212,7 +226,7 @@ body:has(.sc-pt-status:not([hidden])) .sc-hands-msg { bottom: 52px; }
 .sc-editbar-hands { display: inline-flex; align-items: center; gap: 4px; }
 .sc-editbar-hands .sc-btn { min-height: 34px; }
 /* In the piano view the score and its editing tools step aside. */
-.sc-fall-mode .sc-tools, .sc-fall-mode #sc-scroll, .sc-fall-mode #sc-status,
+.sc-fall-mode .sc-tools, .sc-fall-mode #sc-scroll, .sc-fall-mode #sc-status, .sc-fall-mode .sc-editrow,
 .sc-fall-mode #sc-clean, .sc-fall-mode #sc-help, .sc-fall-mode #sc-calib-check,
 .sc-fall-mode #sc-diag, .sc-fall-mode .sc-follow-zoom { display: none !important; }
 /* Floating edit bar: delete on a tablet, where there is no Supr key. */
@@ -233,7 +247,7 @@ body:has(.sc-pt-status:not([hidden])) .sc-hands-msg { bottom: 52px; }
 .sc-trash-list li .sc-btn { margin-left: auto; }
 /* «Controles ▴/▾»: collapsed, only the playback line stays (play, jumps, view,
    time, Escuchar); speed, sync, follow/zoom and the settings bars hide. */
-.sc-compact .sc-tools, .sc-compact #sc-fall-bar, .sc-compact .sc-transport .sc-speed,
+.sc-compact .sc-tools, .sc-compact .sc-editrow, .sc-compact #sc-fall-bar, .sc-compact .sc-transport .sc-speed,
 .sc-compact .sc-transport .sc-follow-zoom { display: none !important; }
 /* Experimental: import a printed score; fingers in the edit bar */
 .sc-sheet-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 8px 0; }
@@ -280,7 +294,7 @@ body:has(.sc-pt-status:not([hidden])) .sc-hands-msg { bottom: 52px; }
 .sc-mini-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg-2);
   font-variant-numeric: tabular-nums; }
 .sc-mini-text b { color: var(--fg); }
-.sc-bare .sc-top, .sc-bare .sc-transport, .sc-bare #sc-practice-bar, .sc-bare #sc-fall-bar, .sc-bare .sc-tools,
+.sc-bare .sc-top, .sc-bare .sc-transport, .sc-bare #sc-practice-bar, .sc-bare #sc-fall-bar, .sc-bare .sc-tools, .sc-bare .sc-editrow,
 .sc-bare #sc-status, .sc-bare #sc-diag, .sc-bare #sc-help, .sc-bare #sc-clean, .sc-bare #sc-calib-check,
 /* The Pianoteq status floats and comes and goes: shown here too (a note
    being taken out of Pianoteq is said while practising full screen). */

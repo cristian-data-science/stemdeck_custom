@@ -2414,6 +2414,21 @@ function wireControls() {
   for (const b of document.querySelectorAll("[data-jump]")) b.onclick = () => jump(Number(b.dataset.jump));
   $("sc-view-toggle").onclick = () => setFallView(!state.view.fall);
   $("sc-controls-toggle").onclick = () => setCompact(!state.view.compact);
+  $("sc-settings-toggle").onclick = () => setSettings(!state.view.panelSettings);
+  setSettings(!!state.view.panelSettings);
+  // «⬇ Exportar»: the four downloads in one menu.
+  const exportMenu = (open) => {
+    $("sc-export-menu").hidden = !open;
+    $("sc-export-toggle").setAttribute("aria-expanded", String(open));
+  };
+  $("sc-export-toggle").onclick = () => exportMenu($("sc-export-menu").hidden);
+  for (const id of ["sc-dl-mid", "sc-dl-raw", "sc-dl-xml", "sc-print"]) $(id).addEventListener("click", () => exportMenu(false));
+  document.addEventListener("pointerdown", (e) => {
+    if (!$("sc-export-menu").hidden && !e.target.closest("#sc-export")) exportMenu(false);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("sc-export-menu").hidden) exportMenu(false);
+  });
   setCompact(!!state.view.compact);
   $("sc-fall-ahead").oninput = () => setAhead(aheadFromSlider($("sc-fall-ahead").value));
   $("sc-fall-ahead").ondblclick = () => setAhead(4, { hint: true });
@@ -2770,6 +2785,17 @@ function stickyBottom() {
 }
 
 /** Show only the playback line, or every control; remembered on this device. */
+/** «🎼 Ajustes»: the transcription's settings shown or folded (remembered). */
+function setSettings(on) {
+  state.view.panelSettings = on;
+  writeView();
+  document.body.classList.toggle("sc-settings-open", on);
+  const b = $("sc-settings-toggle");
+  b.textContent = on ? "🎼 Ajustes ▴" : "🎼 Ajustes ▾";
+  b.setAttribute("aria-expanded", String(on));
+  measureBars();
+}
+
 function setCompact(on) {
   state.view.compact = on;
   writeView();

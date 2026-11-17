@@ -509,11 +509,15 @@ Tonalidad y compás, también persistentes:
 **Controles ▴/▾** (junto a ▶): contrae todo menos la línea de reproducción (▶, saltos, Partitura/Piano,
 tiempo y Escuchar); vuelve a expandirlo con el mismo botón. Se recuerda en cada equipo.
 
-Las barras de arriba (título, reproducción y los ajustes de la partitura) quedan fijas al bajar
-por la partitura, una debajo de otra; sus alturas se miden en vivo porque en la tablet ocupan
-más filas.
+Las barras de arriba (título, reproducción y la fila de edición) quedan fijas al bajar por la
+partitura, una debajo de otra; sus alturas se miden en vivo porque en la tablet ocupan más filas.
+Orden: (1) reproducir, saltar, velocidad, qué se escucha, Seguir, Zoom y **Nombres** (cómo se ve la
+partitura); (2) práctica (bucle, silenciar una mano, metrónomo, cuenta, teclado MIDI); (3) la fila
+de edición (↶ ↷, ＋ Nota, Limpiar, Restaurar, ?) junto a la línea de estado. **🎼 Ajustes** despliega
+los de la transcripción, que se tocan una vez por canción (plegados de entrada; se recuerda), y
+**⬇ Exportar** junta las cuatro descargas. En escritorio la partitura empieza 80 px más arriba.
 
-Ajustes de la partitura, también persistentes: **Rejilla** (1/8, 1/16, 1/16 + tresillos),
+Ajustes de la partitura (en **🎼 Ajustes**), también persistentes: **Rejilla** (1/8, 1/16, 1/16 + tresillos),
 **Mano derecha desde** (punto de división entre claves), **Tempo** (×½ / ×2 si el tempo
 detectado salió a la mitad o al doble), **Acordes** (cada pulso / medio compás / compás /
 ocultos) y **Nombres** (sin nombres, por defecto / do re mi / C D E: el nombre de cada nota
@@ -523,7 +527,7 @@ nota: en Mi♭ menor, sin ella un si♭ decía «si». Las escrituras que nombra
 suena (do♭, fa♭, mi♯, si♯) se nombran por la tecla, en las notas y en los acordes: el do♭ de Mi♭
 menor (la tecla si) dice «si», y su acorde «Simaj7», no «Do♭maj7».
 
-Exportar: **MIDI** (cuantizado, con el mapa de tempo real: en un DAW queda alineado con el
+**⬇ Exportar**: **MIDI** (cuantizado, con el mapa de tempo real: en un DAW queda alineado con el
 audio desde el segundo 0), **MIDI crudo** (tal como se tocó), **MusicXML** (MuseScore,
 Sibelius, Finale) y **PDF** (imprimir).
 

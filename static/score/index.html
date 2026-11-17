@@ -23,11 +23,15 @@
         <span class="sc-chip" title="Tonalidad"><b id="sc-key">–</b></span>
         <span class="sc-chip" title="Notas en la partitura"><b id="sc-count">–</b> notas</span>
       </div>
-      <div class="sc-top-actions" id="sc-export" hidden>
-        <a class="sc-btn" id="sc-dl-mid" download title="MIDI cuantizado, con el mapa de tempo real de la canción">MIDI</a>
-        <a class="sc-btn" id="sc-dl-raw" download title="MIDI tal como se tocó (sin cuantizar)">MIDI crudo</a>
-        <a class="sc-btn" id="sc-dl-xml" download title="Para MuseScore, Sibelius, Finale…">MusicXML</a>
-        <button class="sc-btn" id="sc-print" type="button" title="Imprimir o guardar como PDF">PDF</button>
+      <div class="sc-top-actions sc-menu-wrap" id="sc-export" hidden>
+        <button class="sc-btn" id="sc-export-toggle" type="button" aria-haspopup="true" aria-expanded="false"
+                title="Descargar o imprimir la partitura">⬇ Exportar ▾</button>
+        <div class="sc-export-menu" id="sc-export-menu" hidden>
+          <a class="sc-btn" id="sc-dl-mid" download title="MIDI cuantizado, con el mapa de tempo real de la canción">MIDI</a>
+          <a class="sc-btn" id="sc-dl-raw" download title="MIDI tal como se tocó (sin cuantizar)">MIDI crudo</a>
+          <a class="sc-btn" id="sc-dl-xml" download title="Para MuseScore, Sibelius, Finale…">MusicXML</a>
+          <button class="sc-btn" id="sc-print" type="button" title="Imprimir o guardar como PDF">PDF (imprimir)</button>
+        </div>
       </div>
       <div class="sc-view-actions" id="sc-view-actions" hidden>
         <button class="sc-btn" id="sc-bare" type="button" aria-pressed="false" title="Ocultar todos los paneles: queda una línea con la canción y dónde va (P)">▤ Ocultar paneles</button>
@@ -148,6 +152,8 @@
         <button class="sc-btn" id="sc-trash-toggle" type="button" hidden title="Notas borradas: restaurar una o todas">🗑 Borradas (<span id="sc-trash-count">0</span>)</button>
         <button class="sc-btn" id="sc-view-toggle" type="button" title="Cambiar entre la partitura y el piano con notas cayendo (en el mismo punto)">🎹 Piano</button>
         <button class="sc-btn" id="sc-controls-toggle" type="button" aria-expanded="true" title="Ocultar o mostrar los demás controles (velocidad, ajustes de la partitura y del piano)">Controles ▴</button>
+        <button class="sc-btn sc-follow-zoom" id="sc-settings-toggle" type="button" aria-expanded="false"
+                title="Ajustes de la transcripción, que se tocan una vez por canción: rejilla, manos, tonalidad, pulso, compás, tempo, acordes y pedal">🎼 Ajustes ▾</button>
         <span class="sc-time"><span id="sc-now">0:00</span> / <span id="sc-total">0:00</span></span>
         <input type="range" id="sc-seek" min="0" max="1000" value="0" step="1" aria-label="Posición" />
         <label class="sc-field" title="Qué se escucha">
@@ -185,6 +191,14 @@
         <label class="sc-field sc-follow-zoom" title="Tamaño de la partitura">
           Zoom
           <input type="range" id="sc-zoom" min="25" max="70" value="42" />
+        </label>
+        <label class="sc-field sc-follow-zoom" title="Nombres dentro de las notas y de los acordes">
+          Nombres
+          <select id="sc-names">
+            <option value="solfege">do re mi</option>
+            <option value="letters">C D E</option>
+            <option value="none">sin nombres</option>
+          </select>
         </label>
       </div>
 
@@ -356,7 +370,8 @@
         <button class="sc-btn" id="sc-edit-clear" type="button" title="Quitar la selección (Esc)">✕</button>
       </div>
 
-      <div class="sc-bar sc-tools">
+      <!-- «🎼 Ajustes»: how the notes were transcribed; set once a song, folded away -->
+      <div class="sc-bar sc-tools" id="sc-settings">
         <label class="sc-field" title="Rejilla a la que se ajustan las notas">
           Rejilla
           <select id="sc-grid">
@@ -428,23 +443,21 @@
           <input type="range" id="sc-pedal" min="0" max="100" step="5" value="0" />
           <output id="sc-pedal-val">0 %</output>
         </label>
-        <label class="sc-field" title="Nombres dentro de las notas y de los acordes">
-          Nombres
-          <select id="sc-names">
-            <option value="solfege">do re mi</option>
-            <option value="letters">C D E</option>
-            <option value="none">sin nombres</option>
-          </select>
-        </label>
-        <span class="sc-sep"></span>
-        <button class="sc-btn" id="sc-undo" type="button" title="Deshacer (Ctrl+Z)" disabled>↶ Deshacer</button>
-        <button class="sc-btn" id="sc-redo" type="button" title="Rehacer (Ctrl+Y)" disabled>↷ Rehacer</button>
-        <button class="sc-btn sc-add" id="sc-add" type="button" aria-pressed="false"
-          title="Añadir notas: toca en la partitura (en su línea o espacio y su lugar del compás) o en el piano (su tecla y su momento; arrastra hacia arriba para alargarla). N o Esc para terminar">＋ Nota</button>
-        <button class="sc-btn" id="sc-clean-toggle" type="button" title="Quitar notas fantasma en bloque">Limpiar…</button>
-        <button class="sc-btn sc-danger" id="sc-reset" type="button" title="Descartar todas las ediciones">Restaurar original</button>
-        <button class="sc-btn" id="sc-help-toggle" type="button" title="Atajos de teclado">?</button>
-        <span class="sc-save" id="sc-save" aria-live="polite"></span>
+      </div>
+
+      <!-- Editing the score, and what is going on (the note picked, the hint) -->
+      <div class="sc-bar sc-editrow" id="sc-editrow">
+        <div class="sc-status" id="sc-status"></div>
+        <span class="sc-edit-actions">
+          <button class="sc-btn" id="sc-undo" type="button" title="Deshacer (Ctrl+Z)" disabled>↶ Deshacer</button>
+          <button class="sc-btn" id="sc-redo" type="button" title="Rehacer (Ctrl+Y)" disabled>↷ Rehacer</button>
+          <button class="sc-btn sc-add" id="sc-add" type="button" aria-pressed="false"
+            title="Añadir notas: toca en la partitura (en su línea o espacio y su lugar del compás) o en el piano (su tecla y su momento; arrastra hacia arriba para alargarla). N o Esc para terminar">＋ Nota</button>
+          <button class="sc-btn" id="sc-clean-toggle" type="button" title="Quitar notas fantasma en bloque">Limpiar…</button>
+          <button class="sc-btn sc-danger" id="sc-reset" type="button" title="Descartar todas las ediciones">Restaurar original</button>
+          <button class="sc-btn" id="sc-help-toggle" type="button" title="Atajos de teclado">?</button>
+          <span class="sc-save" id="sc-save" aria-live="polite"></span>
+        </span>
       </div>
 
       <div class="sc-panel" id="sc-clean" hidden>
@@ -468,8 +481,6 @@
         <div><kbd>L</kbd> bucle sí/no (con notas elegidas: sus compases) · <b>A</b>/<b>B</b>: el compás que suena es el inicio o el final del bucle · <b>🔇 Silenciar</b> una mano: la tocas tú, suena solo la otra y sus notas se ven tenues y punteadas · <b>🎹 Teclado MIDI</b> → <b>Esperarme</b>: la canción se detiene en cada nota hasta que la tocas</div>
         <div class="sc-muted">Cada cambio se guarda solo en el servidor y sigue ahí al recargar, con su historial (🕘). «Restaurar original» vuelve a la transcripción (y se puede deshacer).</div>
       </div>
-
-      <div class="sc-status" id="sc-status"></div>
 
       <div class="sc-calib-check" id="sc-calib-check" hidden>
         <b>Calibración: lo que debes ver</b>
