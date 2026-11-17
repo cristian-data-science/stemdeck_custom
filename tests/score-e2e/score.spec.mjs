@@ -507,6 +507,24 @@ test("speed: four fixed speeds (25, 50, 70, 100 %), slower playback, pitch kept,
   expect((await audio()).rate).toBe(0.5);
 });
 
+test("the hands in two colours by default: once for a browser that kept the old default, a choice made after kept", async ({ page }) => {
+  // Saved before: the old default, «Un color».
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem("e2e.colors")) return;
+    sessionStorage.setItem("e2e.colors", "1");
+    localStorage.setItem("stemdeck.score.view", JSON.stringify({ fallColors: "one", panelSettings: true }));
+  });
+  await page.goto(PAGE);
+  await page.waitForFunction(() => window.__score?.data);
+  expect(await page.evaluate(() => window.__score.view.fallColors)).toBe("hands");
+  // Chosen after: kept on the next visit.
+  await page.locator("#sc-view-toggle").click();
+  await page.locator("#sc-fall-colors").selectOption("one");
+  await page.reload();
+  await page.waitForFunction(() => window.__score?.data);
+  expect(await page.evaluate(() => window.__score.view.fallColors)).toBe("one");
+});
+
 test("piano view: falling notes at the same point, options remembered, back to the score", async ({ page }) => {
   await open(page);
   await page.waitForFunction(() => document.querySelector("#sc-audio").readyState >= 1);
@@ -516,7 +534,7 @@ test("piano view: falling notes at the same point, options remembered, back to t
   await expect(page.locator(".sc-tools")).toBeHidden();
   await expect(page.locator("#sc-scroll")).toBeHidden();
   await expect(page.locator("#sc-view-toggle")).toHaveText("𝄞 Partitura");
-  // Same point of the song, and notes drawn on the canvas (amber bars by default).
+  // Same point of the song, and notes drawn on the canvas (each hand its colour by default).
   expect(await page.evaluate(() => document.querySelector("#sc-audio").currentTime)).toBeCloseTo(3.2, 1);
   const amber = () => page.evaluate(() => {
     const c = document.querySelector(".sc-fall-canvas");
@@ -525,10 +543,24 @@ test("piano view: falling notes at the same point, options remembered, back to t
     for (let i = 0; i < d.length; i += 4) if (d[i] > 230 && d[i + 1] > 160 && d[i + 1] < 200 && d[i + 2] < 60) n++;
     return n;
   });
-  await expect.poll(amber).toBeGreaterThan(500);
-  // By hand: two colours and a legend; the 88 keys; names off. Remembered.
-  await page.locator("#sc-fall-colors").selectOption("hands");
+  // By hand by default: two colours (the right hand's blue drawn) and a legend.
+  const blue = () => page.evaluate(() => {
+    const c = document.querySelector(".sc-fall-canvas");
+    const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i + 2] > 200 && d[i] < 140 && d[i + 1] > 120 && d[i + 1] < 190) n++;
+    return n;
+  });
+  await expect.poll(blue).toBeGreaterThan(300);
+  await expect(page.locator("#sc-fall-colors")).toHaveValue("hands");
   await expect(page.locator("#sc-fall-legend")).toBeVisible();
+  await expect.poll(amber).toBe(0);
+  // «Un color»: amber.
+  await page.locator("#sc-fall-colors").selectOption("one");
+  await expect(page.locator("#sc-fall-legend")).toBeHidden();
+  await expect.poll(amber).toBeGreaterThan(500);
+  // Back by hand; the 88 keys; names off. Remembered (a choice is kept).
+  await page.locator("#sc-fall-colors").selectOption("hands");
   await expect.poll(amber).toBe(0);
   await page.locator("#sc-fall-keys").selectOption("full");
   await page.reload();

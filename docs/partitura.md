@@ -91,7 +91,7 @@ compartas y, si lo prefieres, usa una cuenta secundaria. Cuando caduque, vuelve 
   en los dos (en 3D el arrastre sigue la perspectiva).
 - Opciones del piano (se guardan en este navegador): **Teclado** «Rango de la canción» (de la
   octava más grave a la más aguda que usa la pieza, completas) o «88 teclas»; cada do lleva su
-  octava (C4 es el do central). **Colores** «Un color» (por defecto) o «Por mano», con la mano
+  octava (C4 es el do central). **Colores** «Por mano» (por defecto: cada mano con su color) o «Un color», con la mano
   de cada nota como en la partitura; con «Por mano», clic en el cuadrado de color de «mano
   derecha» o «mano izquierda» para elegir otro (↺ vuelve a los de siempre). **Nombres** «C D E»
   (por defecto), «do re mi» o sin nombres.

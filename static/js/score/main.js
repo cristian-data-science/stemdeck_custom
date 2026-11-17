@@ -109,7 +109,7 @@ const state = {
     follow: true,
     fall: false, // the piano with falling notes instead of the score
     fallKeys: "song",
-    fallColors: "one",
+    fallColors: "hands", // the two hands told apart (P8); «Un color» to choose
     fallNames: "letters",
     fallLabel: "name", // on the falling notes: "name", "finger" or "both" (songs with fingering)
     fallStyle: "3d",
@@ -123,6 +123,10 @@ const state = {
     midiMode: "free",
     ...readView(),
     ...(RELOADED ? {} : { fall: false, noteNames: false }),
+    // The hands in two colours became the default: a browser that kept the
+    // old default («Un color», saved with the rest) gets it once; a choice
+    // made after this is kept.
+    ...(readView().handsDefault ? {} : { fallColors: "hands", handsDefault: 1 }),
   },
   // What this song remembers in this browser (practice.js): position, what
   // is heard, speed, the loop, the hand practised.
