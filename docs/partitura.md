@@ -522,6 +522,10 @@ los de la transcripción, que se tocan una vez por canción (plegados de entrada
 Cada vista muestra lo suyo: Zoom, Seguir, Nombres, 🎼 Ajustes y la fila de edición solo en la
 partitura; estilo, teclado, colores, ＋ Nota y 🖌 Corregir manos solo en el piano. ↶ ↷ de la barra
 de reproducción aparecen solo en el piano (y con «Controles ▾»): en la partitura estaban dos veces.
+**En tablet** (hasta 1100 px de ancho), mientras suena la vista de piano las barras se apartan solas
+y queda la línea de «Ocultar paneles» (con ▶ y ▤ Paneles); al pausar vuelven. A 1024×768 la pista
+pasa de 390 a 756 px. «▤ Paneles» las trae de vuelta por lo que queda de esa reproducción. No se
+guarda: es solo mientras suena.
 
 Ajustes de la partitura (en **🎼 Ajustes**), también persistentes: **Rejilla** (1/8, 1/16, 1/16 + tresillos),
 **Mano derecha desde** (punto de división entre claves), **Tempo** (×½ / ×2 si el tempo

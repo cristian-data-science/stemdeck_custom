@@ -1196,6 +1196,40 @@ test("the song's length is shown at once, before its audio has loaded", async ({
   release();
 });
 
+test("on a tablet the bars step aside while the piano plays, and come back on pause; «▤ Paneles» keeps them for that play", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await open(page, { names: false });
+  await page.waitForFunction(() => document.querySelector("#sc-audio").readyState >= 1);
+  await page.locator("#sc-view-toggle").click();
+  const lane = async () => (await page.locator("#sc-fall").boundingBox()).height;
+  const before = await lane();
+  await page.evaluate(() => { document.querySelector("#sc-audio").muted = true; });
+  await page.locator("#sc-play").click();
+  await expect(page.locator("body")).toHaveClass(/sc-auto-bare/);
+  await expect(page.locator("#sc-practice-bar")).toBeHidden();
+  await expect(page.locator("#sc-mini")).toBeVisible();
+  await expect.poll(lane).toBeGreaterThan(before + 200);
+  // Pause: the bars are back, the lane as it was.
+  await page.locator("#sc-mini-play").click();
+  await expect(page.locator("body")).not.toHaveClass(/sc-auto-bare/);
+  await expect(page.locator("#sc-practice-bar")).toBeVisible();
+  await expect.poll(lane).toBeLessThan(before + 5);
+  // «▤ Paneles» while it plays: shown for the rest of that play.
+  await page.locator("#sc-play").click();
+  await expect(page.locator("body")).toHaveClass(/sc-auto-bare/);
+  await page.locator("#sc-mini-panels").click();
+  await expect(page.locator("#sc-practice-bar")).toBeVisible();
+  await page.waitForTimeout(500);
+  await expect(page.locator("body")).not.toHaveClass(/sc-auto-bare/);
+  await page.locator("#sc-play").click();
+  // On a desktop they stay.
+  await page.setViewportSize({ width: 1500, height: 900 });
+  await page.locator("#sc-play").click();
+  await page.waitForTimeout(500);
+  await expect(page.locator("body")).not.toHaveClass(/sc-auto-bare/);
+  await page.locator("#sc-play").click();
+});
+
 test("each view shows its own controls: the score's (zoom, names, settings, editing) not on the piano, the piano's not on the score", async ({ page }) => {
   await open(page);
   const scoreOnly = ["#sc-zoom", "#sc-follow", "#sc-names", "#sc-settings-toggle", "#sc-undo", "#sc-add", "#sc-status"];

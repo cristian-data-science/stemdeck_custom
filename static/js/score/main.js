@@ -2416,7 +2416,14 @@ function wireControls() {
   $("sc-play").onclick = () => togglePlay();
   $("sc-mini-play").onclick = () => togglePlay();
   $("sc-bare").onclick = () => setBare(true);
-  $("sc-mini-panels").onclick = () => setBare(false);
+  $("sc-mini-panels").onclick = () => {
+    if (autoBare) {
+      autoBareOff = true; // shown again for this play
+      autoBareFrame();
+      return;
+    }
+    setBare(false);
+  };
   $("sc-fs").onclick = () => toggleFullscreen();
   $("sc-mini-fs").onclick = () => toggleFullscreen();
   for (const b of document.querySelectorAll("[data-jump]")) b.onclick = () => jump(Number(b.dataset.jump));
@@ -2719,6 +2726,29 @@ function setBare(on) {
   requestAnimationFrame(fitFall);
 }
 
+// On a narrow screen (a tablet) the bars took half of it over the piano:
+// while the song plays in the piano view they step aside by themselves (the
+// one line «Ocultar paneles» leaves stays, with ▶) and come back on pause.
+// Not remembered; «▤ Paneles» on that line brings them back for this play.
+const AUTO_BARE_MAX_W = 1100;
+let autoBare = false;
+let autoBareOff = false; // «▤ Paneles» pressed while playing: not again until a pause
+
+function autoBareFrame() {
+  const want = state.view.fall && player.playing && !state.view.bare && !autoBareOff && !state.fs && innerWidth <= AUTO_BARE_MAX_W;
+  if (!player.playing) autoBareOff = false;
+  if (want === autoBare) return;
+  autoBare = want;
+  document.body.classList.toggle("sc-bare", want || !!state.view.bare);
+  document.body.classList.toggle("sc-auto-bare", want);
+  $("sc-mini").hidden = !(want || state.view.bare);
+  miniText = "";
+  if (want) miniLine(player.time);
+  measureBars();
+  requestAnimationFrame(fitFall);
+}
+window.__autoBare = () => autoBare;
+
 /** The one line: ▶, title · time / length · bar n of m · speed · what plays. */
 function miniLine(t) {
   const d = state.data;
@@ -2835,6 +2865,7 @@ function frame(nowMs) {
     loopAgain(back);
     t = clock.update(player.time, now, false, player.rate);
   }
+  autoBareFrame();
   if (t !== lastT || player.playing) {
     player.tick();
     follow(t);
