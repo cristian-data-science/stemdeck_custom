@@ -833,6 +833,8 @@ Al borrar, queda elegida la siguiente: una racha de notas basura sale tecla por 
 
 **＋ Nota**: agrega una nota donde está la canción, a la altura de la nota elegida o de la más cercana (botón o tecla N), o con doble clic en un lugar vacío del pentagrama (en ese momento y a esa altura). Queda elegida y se mueve, se alarga y se borra como las demás; se guarda como `add|inicio|altura` con su largo (`len`).
 
+La barra de edición es una fila propia sobre el pentagrama (antes flotaba encima y tapaba las notas agudas; en tablet, un tercio del pentagrama). El texto de la nota elegida y el contador de cambios tienen ancho fijo: elegir o editar una nota no cambia el alto de la barra ni mueve el pentagrama bajo el puntero.
+
 **Arrastrar la pista** (como las notas cayendo del piano): con el clic (o el dedo) sobre la pista, la canción se mueve con el puntero; si sonaba, se pausa mientras arrastras y sigue al soltar. En «Editar», arrastrar sobre el espacio vacío hace lo mismo.
 
 **La franja de arriba** muestra la frase que se toca (hasta la próxima respiración; máximo 10 notas, cortada en su pausa más larga), toda de una vez y de un solo color: la que suena en dorado, las ya tocadas atenuadas, cada una un poco más arriba o abajo según la melodía; después de «luego», el inicio de la frase siguiente. Cambia solo al pasar de frase (antes: nueve notas de colores distintos que se corrían en cada nota).

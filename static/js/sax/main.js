@@ -767,6 +767,7 @@ function toggleEdit(on = !edit.on) {
   if (!on) select(null);
   $("sx-lane").style.cursor = "";
   showEdit();
+  lane.resize(); // the bar is a row above the staff: the staff is that much lower
 }
 
 /** The lane in «Editar»: a tap picks a note (or none); a note dragged up or
@@ -1355,6 +1356,9 @@ function wire() {
     else if (e.key === "ArrowRight") seek(audio.currentTime + 5);
   });
   window.addEventListener("resize", () => lane.resize());
+  // The staff takes what the bars around it leave (the edit bar wraps to two
+  // rows on a narrow screen).
+  new ResizeObserver(() => lane.resize()).observe($("sx-lane"));
   setSpeed(prefs.speed);
 }
 

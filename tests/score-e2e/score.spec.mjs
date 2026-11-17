@@ -1642,6 +1642,11 @@ test("🎷 Saxo ✏️ Editar ＋ Nota: a note put in (button, double tap), move
   await page.waitForFunction(() => window.__sax?.notes?.length > 5 && window.__saxLane.hits.length > 3);
   const n0 = await page.evaluate(() => window.__sax.notes.length);
   await page.locator("#sx-edit").click();
+  // The edit bar is a row above the staff, not over it (it covered the high notes).
+  const bar = await page.locator("#sx-editbar").boundingBox();
+  const staff = await page.locator("#sx-lane").boundingBox();
+  expect(bar.y + bar.height).toBeLessThanOrEqual(staff.y + 1);
+  expect(await page.evaluate(() => Math.abs(window.__saxLane.size.h - document.getElementById("sx-lane").clientHeight))).toBeLessThanOrEqual(1);
   // «＋ Nota»: one more note, where the song is, picked.
   await page.locator("#sx-add").click();
   const added = () => page.evaluate(() => window.__sax.notes.filter((n) => n.added).map((n) => ({ key: n.key, midi: n.midi, start: n.start, len: +(n.end - n.start).toFixed(2) })));
@@ -1759,7 +1764,7 @@ test("🎷 Saxo: the lane dragged moves the song; a note made longer and shorter
   await page.goto(`/sax/?job=${JOB}&stems=piano`);
   await page.waitForFunction(() => window.__sax?.notes?.length > 5 && window.__saxLane.hits.length > 3 && document.querySelector("#sx-audio").readyState >= 1);
   // Dragged left on the lane: the song goes on by what moved under the pointer.
-  const box = await page.locator("#sx-lane").boundingBox();
+  let box = await page.locator("#sx-lane").boundingBox();
   const t0 = await page.evaluate(() => document.querySelector("#sx-audio").currentTime);
   const pps = await page.evaluate(() => (window.__saxLane.size.w - 64) / window.__saxLane.lookahead);
   const y = box.y + 12; // above the notes
@@ -1778,9 +1783,14 @@ test("🎷 Saxo: the lane dragged moves the song; a note made longer and shorter
   expect(group).toBeLessThanOrEqual(10);
   // «Editar»: longer with Alt+→, shorter with ⇤, and by its right end dragged.
   await page.locator("#sx-edit").click();
+  // The edit bar is a row above the staff: the staff is lower, and drawn again.
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  box = await page.locator("#sx-lane").boundingBox();
   const h = await page.evaluate(() => window.__saxLane.hits[2]);
   await page.mouse.click(box.x + h.x + Math.min(h.w / 3, 8), box.y + h.y + h.h / 2);
   await expect.poll(() => page.evaluate(() => window.__saxEdit.selected)).toBe(h.key);
+  // Picking a note does not move the staff (the bar keeps its height).
+  expect((await page.locator("#sx-lane").boundingBox()).y).toBe(box.y);
   const len = () => page.evaluate((k) => { const n = window.__sax.notes.find((x) => x.key === k); return n.end - n.start; }, h.key);
   const l0 = await len();
   await page.keyboard.press("Alt+ArrowRight");

@@ -69,8 +69,8 @@ body { display: flex; flex-direction: column; }
 .sx-now-name { font-size: 34px; font-weight: 800; line-height: 1.05; text-shadow: 0 0 18px currentColor; }
 .sx-now-sub { color: #9aa3b5; font-size: 12px; min-height: 1.3em; }
 
-.sx-lane-wrap { position: relative; flex: 1; min-width: 0; }
-.sx-lane { width: 100%; height: 100%; display: block; cursor: pointer; }
+.sx-lane-wrap { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sx-lane { width: 100%; flex: 1 1 0; min-height: 0; height: 0; display: block; cursor: pointer; }
 .sx-status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   text-align: center; padding: 20px; background: rgba(7, 9, 16, 0.78); font-size: 16px; color: #e8edf2; }
 
@@ -117,15 +117,20 @@ body { display: flex; flex-direction: column; }
 .sx-you-text.off { color: #e5484d; }
 
 /* «✏️ Editar»: a quick correction of the line. */
-.sx-editbar { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); width: max-content; display: flex; align-items: center;
-  gap: 6px; flex-wrap: wrap; justify-content: center; max-width: calc(100% - 16px); padding: 6px 8px; border-radius: 14px;
-  background: rgba(14, 18, 34, 0.92); border: 1px solid #2b3350; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); z-index: 3; }
-.sx-editbar button { min-height: 36px; min-width: 38px; padding: 0 10px; border-radius: 10px; cursor: pointer; font: inherit;
+/* A row of its own above the staff (it floated over its top and covered the
+   high notes; on a tablet, a third of the lane). */
+.sx-editbar { order: -1; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: center;
+  padding: 6px 8px; background: rgba(14, 18, 34, 0.96); border-bottom: 1px solid #2b3350; font-size: 13px; }
+.sx-editbar[hidden] { display: none; }
+.sx-editbar button { min-height: 36px; min-width: 36px; padding: 0 8px; border-radius: 10px; cursor: pointer; font: inherit;
   font-weight: 700; border: 1px solid #2b3350; background: #12172a; color: #e6ebf7; touch-action: manipulation; }
 .sx-editbar button:disabled { opacity: 0.35; cursor: default; }
 .sx-editbar .sx-edit-del:not(:disabled) { border-color: #e5484d; color: #ffb4b6; }
-.sx-edit-info { min-width: 7em; text-align: center; font-weight: 700; color: #c9d1e3; font-variant-numeric: tabular-nums; }
-.sx-edit-count { color: #f4b740; font-weight: 700; font-size: 13px; }
+/* As wide as its longest text («Sol♯5 · 12:34 · 0,57 s ✎»), so picking a
+   note does not wrap the bar and move the staff under the pointer. */
+.sx-edit-info { width: 13.5em; flex-shrink: 0; text-align: center; font-weight: 700; color: #c9d1e3; font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sx-edit-count { width: 6.5em; flex-shrink: 0; text-align: right; color: #f4b740; font-weight: 700; font-size: 13px; white-space: nowrap; } /* as the info: the bar keeps its rows */
 .sx-edit-sep { width: 1px; height: 24px; background: #2b3350; }
 body.sx-editing .sx-lane { cursor: default; }
 
