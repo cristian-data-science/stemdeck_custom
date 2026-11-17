@@ -86,7 +86,10 @@ compartas y, si lo prefieres, usa una cuenta secundaria. Cuando caduque, vuelve 
   velocidad, caen más lento.
 - **Estilo 3D** (por defecto), al estilo See Music: las notas llegan desde lejos en perspectiva
   (pequeñas y lentas al fondo, grandes y rápidas al llegar), con volumen y brillo; al tocar
-  cada nota saltan chispas y la tecla se hunde iluminada con su color. **Plano**: las barras
+  cada nota saltan chispas y la tecla se hunde iluminada con su color. Al fondo la perspectiva
+  comprime el tiempo unas 5 veces y las notas cortas quedaban como rayitas apiladas: ahora entran
+  tenues (35 % en el extremo, `depthFade`) y se encienden al pasar la mitad del camino, así las
+  que vas a tocar destacan. **Plano**: las barras
   simples de antes, más livianas para equipos lentos. Tocar y arrastrar notas funciona igual
   en los dos (en 3D el arrastre sigue la perspectiva).
 - Opciones del piano (se guardan en este navegador): **Teclado** «Rango de la canción» (de la

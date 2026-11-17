@@ -321,6 +321,8 @@ check("deleted-note names", midiName(70, { flats: true }) === "Si♭4" && midiNa
   check("depth 0 at the keys, depth 1 at the top", depthY(0, 500) === 0 && Math.abs(depthY(1, 500) - 500) < 1e-9);
   check("notes speed up as they come near", depthY(0.1, 500) - depthY(0, 500) > depthY(1, 500) - depthY(0.9, 500));
   check("height <-> depth round trip", [0, 0.2, 0.5, 0.9, 1].every((u) => Math.abs(depthAt(depthY(u, 500), 500) - u) < 1e-9));
+  const { depthFade, FADE_TO } = await import("../../static/js/score/fall.js");
+  check("near notes whole, far ones faint, fading steadily", depthFade(0) === 1 && depthFade(0.5) === 1 && Math.abs(depthFade(1) - FADE_TO) < 1e-9 && depthFade(0.7) > depthFade(0.9) && depthFade(2) === depthFade(1));
 }
 // ── practice (static/js/score/practice.js) ──
 {

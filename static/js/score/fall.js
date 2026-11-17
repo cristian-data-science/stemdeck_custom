@@ -130,6 +130,12 @@ export function fallingBars(notes, t, next = new Map(), window = LOOKAHEAD_SEC) 
 export const FAR = 1.15; // 1.7 crowded the far notes into the middle
 export const depthScale = (u) => 1 / (1 + FAR * Math.max(0, u));
 
+/** How bright a note is at depth u (3D): whole up to FADE_FROM, then
+ *  fading to FADE_TO at the far end. */
+export const FADE_FROM = 0.55;
+export const FADE_TO = 0.35;
+export const depthFade = (u) => (u <= FADE_FROM ? 1 : 1 - ((Math.min(1, u) - FADE_FROM) / (1 - FADE_FROM)) * (1 - FADE_TO));
+
 /** Height above the keys (px) of depth u, for a lane fallH px tall. */
 export function depthY(u, fallH) {
   const s1 = depthScale(1);
@@ -890,15 +896,20 @@ export class FallView {
       grad.addColorStop(0.35, color.bar);
       grad.addColorStop(1, color.lo);
       g.fillStyle = grad;
-      g.globalAlpha = (b.sounding ? 1 : 0.92) * this.fade(b.note);
+      // Far off, the perspective squeezes the time ~5 times: short notes
+      // there are thin dashes piled up. They come in faint and brighten as
+      // they near, so the near ones (the ones to play) stand out.
+      const far = depthFade(u0);
+      g.globalAlpha = (b.sounding ? 1 : 0.92) * this.fade(b.note) * far;
       quad(g, bl, yb, br, yb, tr, yt, tl, yt);
       g.fill();
-      g.globalAlpha = 1;
+      g.globalAlpha = far;
       if (this.muted(b.note)) mutedOutline(g, color);
       const capH = Math.max(2, (yb - yt) > 10 ? 3 * depthScale(u1) + 1 : 1);
       g.fillStyle = "rgba(255,255,255,0.45)";
       quad(g, tl, yt + capH, tr, yt + capH, tr, yt, tl, yt);
       g.fill();
+      g.globalAlpha = 1;
       if (this.selection.has(b.note.id)) {
         g.strokeStyle = "#ffffff";
         g.lineWidth = 3;
