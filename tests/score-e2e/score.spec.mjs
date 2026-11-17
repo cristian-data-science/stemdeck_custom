@@ -1720,6 +1720,42 @@ test("🎷 Saxo Metrónomo y Cuenta: a click on each beat of the song, the bar's
   expect(errors).toEqual([]);
 });
 
+test("🎷 Saxo on a tablet: the notation folds into «⚙ Notas» (one header row), the fingering panel can be put away", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(`/sax/?job=5c0de0000001&stems=piano`);
+  await page.evaluate(() => { const p = JSON.parse(localStorage.getItem("stemdeck.sax") || "{}"); delete p.hornHidden; localStorage.setItem("stemdeck.sax", JSON.stringify(p)); });
+  await page.waitForFunction(() => window.__sax?.notes?.length > 5 && window.__saxLane.hits.length > 3);
+  // Wide: the three settings in the header, no menu button.
+  await expect(page.locator("#sx-view")).toBeVisible();
+  await expect(page.locator("#sx-notation-toggle")).toBeHidden();
+  const tall = (await page.locator(".sx-chart svg").boundingBox()).height;
+  // A tablet: folded; the header is one row and the chart keeps its height in a shorter window.
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await expect(page.locator("#sx-view")).toBeHidden();
+  expect((await page.locator(".sx-top").boundingBox()).height).toBeLessThan(70);
+  await page.locator("#sx-notation-toggle").click();
+  await expect(page.locator("#sx-view")).toBeVisible();
+  await page.locator("#sx-view").selectOption("concert");
+  expect(await page.evaluate(() => window.__saxLane.concert)).toBe(true);
+  await page.locator("#sx-view").selectOption("written");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#sx-view")).toBeHidden();
+  expect((await page.locator(".sx-chart svg").boundingBox()).height).toBeGreaterThan(380);
+  expect(tall).toBeGreaterThan(380);
+  // The fingering panel put away: the staff takes the whole width; back with the tab.
+  const before = (await page.locator("#sx-lane").boundingBox()).width;
+  await page.locator("#sx-horn-hide").click();
+  await expect(page.locator("#sx-horn-panel")).toBeHidden();
+  await expect.poll(async () => (await page.locator("#sx-lane").boundingBox()).width).toBeGreaterThan(before + 150);
+  await page.reload(); // kept
+  await page.waitForFunction(() => window.__sax?.notes?.length > 5);
+  await expect(page.locator("#sx-horn-panel")).toBeHidden();
+  await page.locator("#sx-horn-show").click();
+  await expect(page.locator("#sx-horn-panel")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test("🎷 Saxo ✏️ Editar ＋ Nota: a note put in (button, double tap), moved, stretched, kept, taken out", async ({ page }) => {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));

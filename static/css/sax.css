@@ -195,3 +195,36 @@ body.sx-horn-chart .sx-horn { width: clamp(220px, 25vw, 340px); }
 /* «Metrónomo» */
 .sx-check { cursor: pointer; }
 .sx-check input { accent-color: #f4b740; width: 16px; height: 16px; margin: 0 2px 0 0; vertical-align: -3px; }
+
+/* How the notes are written (Notas, Fraseo, Nombres): in the header on a
+   wide screen; folded into «⚙ Notas» on a narrow one, so the header is one
+   row and the keys of the fingering chart get that much more height. */
+.sx-fold-toggle { display: none; }
+.sx-fold-menu { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+@media (max-width: 1100px) {
+  .sx-fold-toggle { display: inline-block; }
+  .sx-fold-menu { display: none; position: absolute; top: calc(100% + 8px); right: 0; z-index: 20; min-width: 280px; padding: 14px;
+    border-radius: 12px; background: #11162a; border: 1px solid #2b3350; box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55); }
+  .sx-fold-menu.open { display: grid; gap: 10px; }
+  .sx-fold-menu .sx-field { display: grid; grid-template-columns: 4.5em 1fr; gap: 10px; }
+  .sx-fold-menu .sx-field select { width: 100%; }
+  .sx-top { padding: 8px 12px; gap: 10px; }
+  .sx-title { min-width: 150px; }
+  .sx-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* The note's name and the chart/photo button side by side under the keys
+     (a row less under them). */
+  .sx-now { align-self: flex-start; text-align: left; padding-left: 12px; }
+  .sx-now-name { font-size: 28px; }
+  .sx-horn-switch { position: absolute; right: 8px; bottom: 12px; margin: 0; }
+}
+
+/* The fingering panel put away (the staff takes the whole width), and back. */
+.sx-horn { position: relative; }
+.sx-horn-hide { position: absolute; top: 4px; left: 4px; z-index: 2; width: 26px; height: 26px; border-radius: 50%; cursor: pointer;
+  font: 700 15px Inter, sans-serif; line-height: 1; color: #9aa3b5; background: rgba(18, 23, 42, 0.7); border: 1px solid #2b3350; }
+.sx-horn-hide:hover, .sx-horn-show:hover { color: #fff; border-color: #f4b740; }
+body.sx-horn-hidden .sx-horn { display: none; }
+.sx-horn-show { position: absolute; left: 0; top: 50%; transform: translateY(-50%); z-index: 4; padding: 10px 8px 10px 6px; cursor: pointer;
+  font: 700 13px Inter, sans-serif; color: #c9d1e3; background: rgba(18, 23, 42, 0.9); border: 1px solid #2b3350; border-left: 0;
+  border-radius: 0 12px 12px 0; }
+.sx-horn-show[hidden] { display: none; }

@@ -28,33 +28,42 @@
           <option value="baritone">Barítono (Mi♭)</option>
         </select>
       </label>
-      <label class="sx-field" title="Para el saxo: la nota que lees y tocas (un saxo Alto lee una sexta mayor más arriba de lo que suena). Como suenan: las notas reales de la canción, las que tocaría un piano">
-        Notas
-        <select id="sx-view">
-          <option value="written">Para el saxo</option>
-          <option value="concert">Como suenan</option>
-        </select>
-      </label>
-      <label class="sx-field" title="Ligado: la línea como la tocaría un saxofonista (una nota sostenida en vez de sus pedazos, sin adornos ni notas sueltas que no pertenecen, ligando los silencios mínimos). Todas las notas: tal como salieron de la transcripción">
-        Fraseo
-        <select id="sx-phrasing">
-          <option value="clean">Ligado</option>
-          <option value="all">Todas las notas</option>
-        </select>
-      </label>
-      <label class="sx-field">
-        Nombres
-        <select id="sx-names">
-          <option value="solfege">Do Re Mi</option>
-          <option value="letters">C D E</option>
-        </select>
-      </label>
+      <!-- How the notes are written: set once. In the bar on a wide screen; on a
+           narrow one, folded into a menu (a row less: more room for the keys). -->
+      <div class="sx-menu-wrap sx-fold">
+        <button class="sx-menu-toggle sx-fold-toggle" id="sx-notation-toggle" type="button" aria-haspopup="true" aria-expanded="false"
+                title="Cómo se escriben las notas: para el saxo o como suenan, el fraseo y los nombres">⚙ Notas ▾</button>
+        <div class="sx-fold-menu" id="sx-notation-menu">
+          <label class="sx-field" title="Para el saxo: la nota que lees y tocas (un saxo Alto lee una sexta mayor más arriba de lo que suena). Como suenan: las notas reales de la canción, las que tocaría un piano">
+            Notas
+            <select id="sx-view">
+              <option value="written">Para el saxo</option>
+              <option value="concert">Como suenan</option>
+            </select>
+          </label>
+          <label class="sx-field" title="Ligado: la línea como la tocaría un saxofonista (una nota sostenida en vez de sus pedazos, sin adornos ni notas sueltas que no pertenecen, ligando los silencios mínimos). Todas las notas: tal como salieron de la transcripción">
+            Fraseo
+            <select id="sx-phrasing">
+              <option value="clean">Ligado</option>
+              <option value="all">Todas las notas</option>
+            </select>
+          </label>
+          <label class="sx-field">
+            Nombres
+            <select id="sx-names">
+              <option value="solfege">Do Re Mi</option>
+              <option value="letters">C D E</option>
+            </select>
+          </label>
+        </div>
+      </div>
     </header>
 
     <main class="sx-stage">
       <div class="sx-next" id="sx-next" aria-live="off" title="Las notas que vienen (escritas para tu saxo)"></div>
       <div class="sx-body">
-        <aside class="sx-horn">
+        <aside class="sx-horn" id="sx-horn-panel">
+          <button class="sx-horn-hide" id="sx-horn-hide" type="button" title="Ocultar la digitación: el pentagrama ocupa todo el ancho">‹</button>
           <div class="sx-horn-art" id="sx-horn"></div>
           <div class="sx-now" id="sx-now">
             <div class="sx-now-name" id="sx-now-name">—</div>
@@ -68,6 +77,7 @@
                 title="Cambiar entre el diagrama de llaves (nuevo) y la foto del saxo (anterior)">🖼 Ver foto</button>
         </aside>
         <div class="sx-lane-wrap">
+          <button class="sx-horn-show" id="sx-horn-show" type="button" hidden title="Mostrar la digitación">🎷 ›</button>
           <canvas class="sx-lane" id="sx-lane" aria-label="Notas que llegan al saxo"></canvas>
           <div class="sx-editbar" id="sx-editbar" role="toolbar" aria-label="Editar notas" hidden>
             <button type="button" id="sx-undo" title="Deshacer (Ctrl+Z)" disabled>↶</button>

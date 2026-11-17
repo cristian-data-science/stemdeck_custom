@@ -1383,6 +1383,28 @@ function wire() {
     rebuild();
     loadSamples();
   };
+  // «⚙ Notas» (a narrow screen): the notation's settings folded into a menu.
+  const notation = (open) => {
+    $("sx-notation-menu").classList.toggle("open", open);
+    $("sx-notation-toggle").setAttribute("aria-expanded", String(open));
+  };
+  $("sx-notation-toggle").onclick = () => notation(!$("sx-notation-menu").classList.contains("open"));
+  document.addEventListener("pointerdown", (e) => {
+    if (!e.target.closest(".sx-fold")) notation(false);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") notation(false);
+  });
+  // The fingering panel put away, and back (kept).
+  const hornHidden = (hidden) => {
+    prefs.hornHidden = hidden;
+    savePrefs();
+    document.body.classList.toggle("sx-horn-hidden", hidden);
+    $("sx-horn-show").hidden = !hidden;
+  };
+  $("sx-horn-hide").onclick = () => hornHidden(true);
+  $("sx-horn-show").onclick = () => hornHidden(false);
+  hornHidden(!!prefs.hornHidden);
   // «🎚 Sonido»: what is set once (the saxophone, its room, its tone, the
   // expression), in a menu of its own.
   const soundMenu = (open) => {

@@ -837,6 +837,8 @@ La barra de edición es una fila propia sobre el pentagrama (antes flotaba encim
 
 **La barra de abajo**, en filas según para qué sirven: (1) tocar la canción (▶, tiempo, posición, velocidad) y los modos (✏️ Editar, 🎤 Practicar); (2) estudiarla (Bucle, Metrónomo, Cuenta, Vista) y lo que se oye (Escuchar, los dos volúmenes y **🎚 Sonido**, un menú con lo que se ajusta una vez: el saxo, la sala, el tono y la expresión); (3) qué está pasando (el saxo que suena, las notas, los avisos).
 
+**En tablet** (pantalla de hasta 1100 px de ancho): Notas, Fraseo y Nombres se pliegan en el menú «⚙ Notas» (la cabecera queda en una fila) y el nombre de la nota comparte fila con el botón de la foto, así el diagrama de digitación gana alto: a 1024×768 pasa de 304 a 409 px (los números de los dedos, de 14 a 19 px). El botón «‹» del panel oculta la digitación y deja todo el ancho al pentagrama; la pestaña «🎷 ›» la trae de vuelta (se recuerda).
+
 **Colores del pentagrama**: las notas que vienen en un solo color (azul) y la que suena en dorado, como la franja de arriba y el diagrama de digitación (antes, un color por altura: un arcoíris que había que descifrar). Qué nota es lo dicen su altura en el pentagrama y su nombre.
 
 **El ritmo en el pentagrama**: una línea tenue en cada pulso y una más clara donde empieza cada compás, con su número (de la rejilla de pulsos del estudio, `GET /api/jobs/<id>/beats`; `static/js/sax/beats.js`). Sin rejilla, las marcas de segundos de antes.
