@@ -138,6 +138,20 @@ test("the bar sounding is lit with a band behind it, and the band moves with the
   if (ms[0].start > 0.6) await expect(page.locator(".sd-bar-now")).toBeHidden();
 });
 
+test("a double click on a bar, off its notes, plays the song from that bar", async ({ page }) => {
+  await open(page, { names: false });
+  await page.waitForFunction(() => document.querySelector("#sc-audio").readyState >= 1);
+  await page.evaluate(() => { document.querySelector("#sc-audio").muted = true; });
+  const m = await page.evaluate(() => window.__score.data.measures[2]);
+  const r = await page.evaluate((n) => { const b = document.querySelector(`#sc-score g.measure[id="m${n}"]`).getBoundingClientRect(); return { x: (b.left + b.right) / 2, y: b.bottom + 8 }; }, m.number);
+  await page.mouse.dblclick(r.x, r.y);
+  await expect.poll(() => page.evaluate(() => window.__player.playing)).toBe(true);
+  const t = await page.evaluate(() => window.__player.time);
+  expect(t).toBeGreaterThanOrEqual(m.start - 0.1);
+  expect(t).toBeLessThan(m.start + 1.5);
+  await page.locator("#sc-play").click();
+});
+
 test("real playback drives the follow loop", async ({ page }) => {
   await open(page);
   await page.evaluate(async () => {

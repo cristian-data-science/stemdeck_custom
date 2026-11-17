@@ -1316,13 +1316,35 @@ function wirePointer() {
   $("sc-edit-clear").onclick = () => select([]);
   score.addEventListener("dblclick", (e) => {
     const note = e.target.closest("g.note");
-    if (!note) return;
+    if (!note) {
+      // Not on a note (between notes, a bar of rests): from the start of
+      // the bar under the pointer.
+      const n = barAt(e.clientX, e.clientY);
+      const m = n != null ? (state.data?.measures || []).find((x) => x.number === n) : null;
+      if (!m) return;
+      player.seek(Math.max(0, m.start - 0.02));
+      if (!player.playing) togglePlay();
+      return;
+    }
     const n = state.notes.find((x) => x.id === noteIdOf(note.id));
     if (n) {
       player.seek(Math.max(0, n.start - 0.05));
       if (!player.playing) togglePlay();
     }
   });
+}
+
+/** The number of the bar drawn under a point of the screen (its staves and
+ *  the room above and below them), or null. */
+function barAt(x, y) {
+  for (const g of $("sc-score").querySelectorAll("g.measure")) {
+    const r = g.getBoundingClientRect();
+    if (x >= r.left && x <= r.right && y >= r.top - 20 && y <= r.bottom + 20) {
+      const n = Number(/^m(\d+)$/.exec(g.id)?.[1]);
+      return Number.isFinite(n) ? n : null;
+    }
+  }
+  return null;
 }
 
 // Dragging notes on the staff: across = grid steps in time (measured on this

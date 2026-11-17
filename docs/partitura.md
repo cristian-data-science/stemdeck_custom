@@ -475,6 +475,8 @@ banda (9 min), una grabación de piano solo (3:45) y la canción de calibración
 - **El compás que suena** se ilumina con una franja suave detrás (`render.js placeBar`, otra capa
   propia que solo se mueve al cambiar de compás), para seguir la partitura desde lejos. La
   fluidez medida no cambia (5 % de cuadros más lentos: 16,8 ms).
+- **Doble clic en un compás**, fuera de sus notas (entre ellas o en un compás de silencios): la
+  canción suena desde el inicio de ese compás. Sobre una nota, como antes, desde la nota.
 - **Zoom.** Mientras se arrastra el control, lo dibujado se escala al instante (una vista
   previa: los renglones se cortan donde estaban); al soltarlo la partitura se graba de nuevo a ese
   tamaño (~0,5 s de Verovio en una canción de 3304 notas, 0,75 s en total) y la página vuelve al
