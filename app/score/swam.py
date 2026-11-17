@@ -339,6 +339,9 @@ def _render(key: str, dest: Path, payload: dict) -> None:
                 _PROC.pop(key, None)
     if proc.returncode != 0 or not dest.is_file():
         raise RuntimeError((err or out or f"exit {proc.returncode}").strip().splitlines()[-1][:300])
+    from app.score.flacseek import add_seektable
+
+    add_seektable(dest)  # libsndfile writes none: the page jumps in it at once
     logger.info("swam: %s rendered (%s, %d notes)", dest.name, sax, len(notes))
 
 

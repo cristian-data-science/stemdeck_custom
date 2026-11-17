@@ -472,6 +472,13 @@ banda (9 min), una grabación de piano solo (3:45) y la canción de calibración
   previa: los renglones se cortan donde estaban); al soltarlo la partitura se graba de nuevo a ese
   tamaño (~0,5 s de Verovio en una canción de 3304 notas, 0,75 s en total) y la página vuelve al
   renglón donde va la canción. Antes no se veía nada hasta soltar.
+- **Saltar en la canción.** Los FLAC que sirve la app (el audio de la partitura, el
+  acompañamiento del saxo, Pianoteq y SWAM) llevan un índice de búsqueda (SEEKTABLE, un punto por
+  segundo; `app/score/flacseek.py`), que ni ffmpeg ni libsndfile ni Pianoteq escriben. Sin él el
+  navegador buscaba a tientas: para saltar a 0:30 de una canción de 6 minutos pedía seis veces la
+  misma zona del archivo. Medido abriendo y saltando tres veces: de 15 peticiones y 22,6 MB a 4
+  peticiones y 17,6 MB. El índice se lee de los encabezados de los propios bloques del archivo y
+  el audio queda idéntico; los archivos que ya existían lo reciben la primera vez que se sirven.
 - **Cuánto suena cada nota.** Al reproducir (MIDI y Pianoteq), cada nota suena hasta donde el
   pianista soltó la tecla, según lo oyó el modelo. No hasta donde está dibujada: cada pentagrama
   se dibuja a una sola voz, así que una nota sostenida se dibuja solo hasta la siguiente nota de

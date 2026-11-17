@@ -298,6 +298,9 @@ def render_as(
         if not tmp.is_file() or tmp.stat().st_size == 0:
             detail = (res.stderr or res.stdout or "").strip().splitlines()[-1:] or ["sin salida"]
             raise RuntimeError(f"Pianoteq no generó audio ({detail[0][:200]})")
+        from app.score.flacseek import add_seektable
+
+        add_seektable(tmp)  # Pianoteq writes none: the page jumps in it at once
         tmp.replace(out)
     finally:
         mid.unlink(missing_ok=True)

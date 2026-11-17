@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 from app.core.config import JOB_ID_RE, STEM_NAMES
 from app.core.registry import get as registry_get
 from app.score import store
+from app.score.flacseek import add_seektable
 
 router = APIRouter()
 _LOCK = threading.Lock()
@@ -70,6 +71,7 @@ def _mix(parts: list[Path], dest: Path) -> None:
         stdin=subprocess.DEVNULL,
         creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
     )
+    add_seektable(tmp)  # so the page jumps in the song at once (flacseek.py)
     tmp.replace(dest)
 
 
@@ -92,6 +94,7 @@ async def sax_backing(
     def make() -> None:
         with _LOCK:
             _mix(parts, dest)
+        add_seektable(dest)  # one made before seek tables
 
     await asyncio.to_thread(make)
     return FileResponse(dest, media_type="audio/flac", headers={"Cache-Control": "no-cache"})
@@ -416,6 +419,7 @@ async def swam_audio(job_id: str, key: str) -> FileResponse:
     path = swam.audio_path(_swam_folder(job_id), key)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="not rendered")
+    await asyncio.to_thread(add_seektable, path)  # a render from before seek tables
     return FileResponse(
         path, media_type="audio/flac", headers={"Cache-Control": "max-age=31536000, immutable"}
     )

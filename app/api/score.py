@@ -37,6 +37,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from app.core.config import JOB_ID_RE, JOBS_DIR
 from app.core.registry import get as registry_get
 from app.score import engines, ghosts, hand_labels, pianoteq, pulse, service, storage, store, tuning
+from app.score.flacseek import add_seektable
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -979,6 +980,7 @@ async def pianoteq_audio(job_id: str, stem: str, key: str) -> FileResponse:
     path = pianoteq.audio_path(_pt_folder(job_id, stem), key)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="not rendered")
+    await asyncio.to_thread(add_seektable, path)  # a render from before seek tables
     # The key is a hash of the content: the file never changes under its name.
     return FileResponse(
         path, media_type="audio/flac", headers={"Cache-Control": "private, max-age=31536000"}
@@ -1207,6 +1209,7 @@ def _flac_of(src, dest) -> None:
         check=True, capture_output=True, stdin=subprocess.DEVNULL,
         creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
     )  # fmt: skip
+    add_seektable(tmp)  # so the page jumps in the song at once (flacseek.py)
     tmp.replace(dest)
 
 
@@ -1224,6 +1227,7 @@ async def score_audio(job_id: str, name: str) -> FileResponse:
     def make() -> None:
         with _AUDIO_LOCK:
             _flac_of(src, dest)
+        add_seektable(dest)  # one made before seek tables: given one now
 
     await asyncio.to_thread(make)
     return FileResponse(dest, media_type="audio/flac", headers={"Cache-Control": "no-cache"})
