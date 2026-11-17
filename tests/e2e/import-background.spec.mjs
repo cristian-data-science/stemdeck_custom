@@ -99,3 +99,34 @@ test.describe("an import with the studio empty", () => {
     await expect(page.locator("#title")).not.toHaveText(TRACK_TITLE);
   });
 });
+
+test.describe("the import's loading screen", () => {
+  test("says step by step what is done while it runs, and gives way to the track", async ({ page }) => {
+    await seedSibling(page);
+    const queue = await startImport(page);
+
+    const screen = page.locator("#job-progress");
+    await expect(screen).toBeVisible();
+    await expect(screen.locator(".jp-title")).toHaveText("Importing Song");
+    // Download and analysis done, separation running with its own %.
+    await expect(screen.locator('.jp-step.done[data-step="download"]')).toBeVisible();
+    await expect(screen.locator('.jp-step.done[data-step="analyze"]')).toBeVisible();
+    const now = screen.locator(".jp-step.now");
+    await expect(now).toHaveAttribute("data-step", "separate");
+    await expect(now.locator(".jp-meta")).toHaveText("40 %");
+    await expect(now.locator(".jp-stem")).not.toHaveCount(0);
+    await expect(screen.locator('.jp-step.next[data-step="mix"]')).toBeVisible();
+
+    // Opening another track takes the screen away; the running one brings it back.
+    await page.locator(`.cat-item[data-id="${SIBLING_JOB_ID}"]`).first().click();
+    await expect(screen).toBeHidden();
+    await expect(page.locator("#title")).toHaveText(SIBLING_TITLE, { timeout: 15000 });
+    await page.locator(`.cat-item[data-id="${JOB_ID}"]`).first().click();
+    await expect(screen).toBeVisible();
+
+    // Done: the screen goes and the song it was showing opens.
+    await queue.settle();
+    await expect(screen).toBeHidden({ timeout: 15000 });
+    await expect(page.locator("#title")).toHaveText(TRACK_TITLE, { timeout: 15000 });
+  });
+});

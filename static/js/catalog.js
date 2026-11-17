@@ -7,6 +7,7 @@ import { refreshStemChoiceVisuals } from "./stemChoice.js";
 import { trackFormat, formatIconSvg, paintNowPlayingArt } from "./formatIcon.js";
 import { formatKey } from "./keyLabel.js";
 import { showError, importFromUrl, detachForegroundJob, runVocalSplitIfWanted } from "./job.js";
+import { showJobProgress, hideJobProgress, jobProgressFor } from "./jobProgress.js";
 import {
   cancelQueuedJob, currentIds, getQueueSnapshot, isPaused, onJobSettled, onQueueChange,
   queueCount, queueRowStates, refreshQueue, reorderQueuedJob, runningLabel, startQueue,
@@ -1141,6 +1142,8 @@ async function loadTrackIntoStudio(trackId) {
   // stops repainting this view (and, at completion, replacing the audio that
   // is about to load here).
   if (trackId !== foregroundJobId) detachForegroundJob();
+  // Another song's loading screen gives way to this one.
+  if (jobProgressFor() && jobProgressFor() !== trackId) hideJobProgress();
   const hadStoredAudio = Boolean(track.audioStems?.length);
   const token = ++_loadTrackToken;
 
@@ -1177,10 +1180,15 @@ async function loadTrackIntoStudio(trackId) {
   } catch (e) { console.warn("[catalog] server sync failed, using stored track:", e); }
 
   if (token !== _loadTrackToken) return;
-  // A reprocessing track may still carry the previous extraction's stems
-  // (hadStoredAudio), but it isn't ready — loading it would replace the live
-  // job-progress overlay with stale audio. Leave the progress UI in place.
-  if (PROCESSING_STATUSES.has(track.status)) return;
+  // A song still being downloaded and separated: its loading screen, what is
+  // being done to it step by step (jobProgress.js), and the song itself when
+  // it is ready. A reprocessing track may still carry the previous
+  // extraction's stems (hadStoredAudio), but it isn't ready: not loaded.
+  if (PROCESSING_STATUSES.has(track.status)) {
+    showJobProgress(trackId, { title: track.title, thumb: track.thumb, onReady: openWhenReady });
+    return;
+  }
+  hideJobProgress(trackId);
   if (!track.audioStems?.length) return;
   if (track.status !== "done" && !hadStoredAudio) return;
   applyStoredStemSelection(track);
@@ -2509,6 +2517,22 @@ function decorateRow(el, rowState) {
  *  never take the studio while they run (#747); this is what lets the first one
  *  to finish open itself, but only while the studio is still empty and the user
  *  has not opened anything since. */
+/** The song whose loading screen was on show is ready: open it (once, not
+ *  again by the auto-open of a finished import). */
+function openWhenReady(jobId) {
+  _autoOpenTokens.delete(jobId);
+  // "Sync again" holding the studio for another song: that one is kept.
+  if (foregroundJobId && foregroundJobId !== jobId) return;
+  loadTrackIntoStudio(jobId);
+}
+
+/** An import just asked for: its loading screen, if the studio has nothing
+ *  else on it (a song being listened to is not covered). */
+export function showImportProgress(jobId, title) {
+  if (audioEngine || multitrack || foregroundJobId) return;
+  showJobProgress(jobId, { title, onReady: openWhenReady });
+}
+
 export function armAutoOpen(jobId) {
   _autoOpenTokens.set(jobId, _loadTrackToken);
 }

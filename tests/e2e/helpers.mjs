@@ -438,6 +438,16 @@ export async function stubImportQueue(page, jobId, title = "Importing") {
       }),
     }));
   await page.route("**/api/queue/events", (route) => route.abort());
+  // The job itself says the same while it runs (the import's loading screen
+  // reads it); settled, the seeded fixture answers.
+  await page.route(`**/api/jobs/${jobId}`, (route) => {
+    if (!running || route.request().method() !== "GET") return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ job_id: jobId, status: "separating", stage: "Separating 40%", progress: 0.4, title, source_url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", stage_timings: { download: 3, analyze: 1 } }),
+    });
+  });
   const read = () => page.evaluate(async () => (await import("/js/queue.js")).refreshQueue());
   return {
     run: async () => { running = true; await read(); },

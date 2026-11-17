@@ -416,6 +416,9 @@ class Job:
             "trashed_at": self.trashed_at,
             "favorite": self.favorite,
             "created_at": self.created_at,
+            # Whether the structure pass runs at the end (the loading
+            # screen's step list, static/js/jobSteps.js).
+            "auto_sections": self.auto_sections,
         }
 
     def to_queue_state(self) -> dict[str, Any]:

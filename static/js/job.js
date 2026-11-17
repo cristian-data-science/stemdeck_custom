@@ -8,7 +8,7 @@ import {
 import { destroyPlayer, wireUpAudio, setWaveformLoading, updateFooterTrack } from "./player.js";
 import { notifyFailure, dismissFailuresByJobId } from "./notifications.js";
 import { getStagePhrases } from "./phrases.js";
-import { addTrackToLibrary, setCurrentTrack, updateTrackStatus, applyStemPresenceCards, libraryAudioTags, libraryArtist, libraryIdentity, libraryWork, paintFinishedTrackNames, armAutoOpen } from "./catalog.js";
+import { addTrackToLibrary, setCurrentTrack, updateTrackStatus, applyStemPresenceCards, libraryAudioTags, libraryArtist, libraryIdentity, libraryWork, paintFinishedTrackNames, armAutoOpen, showImportProgress } from "./catalog.js";
 import { initSections } from "./sections.js";
 import { importPlaylist, looksLikePlaylist } from "./playlist.js";
 import { t } from "./i18n.js";
@@ -981,5 +981,6 @@ export function wireJobForm() {
     // queue stream drives the row, and catalog.js completes the library entry
     // when the job leaves the queue.
     armAutoOpen(jobId);
+    showImportProgress(jobId, displayTitle);
   });
 }
