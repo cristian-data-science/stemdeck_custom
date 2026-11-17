@@ -10,7 +10,8 @@ in.json: {"plugin": path to the SWAM .dll/.vst3, "duration": s, "cents": the
 song's tuning, "notes": [{"start", "end", "midi" (concert), "velocity",
 "legato", "curve": {"step", "midi": [...], "level": [...]} | absent}],
 "octave": semitones added to every note (12 for SWAM's tenor and baritone),
-"params": {a SWAM parameter's name: its value 0..1} set before rendering}.
+"params": {a SWAM parameter's name: its value 0..1} set before rendering,
+"level_db": the level the render is brought to (see gain()), or absent}.
 Prints progress lines ("progress 0.42") and writes a 44.1 kHz FLAC.
 
 How a line becomes a performance:
@@ -183,9 +184,37 @@ def write_midi(evts: list[tuple[float, list[int]]], path: Path) -> None:
     mid.save(str(path))
 
 
+def spans_power(audio, sr: int, notes: list[dict]) -> float:
+    """The mean power of `audio` (samples x channels) while the notes sound."""
+    import numpy as np
+
+    total, count = 0.0, 0
+    for n in notes:
+        a, b = int(float(n["start"]) * sr), int(float(n["end"]) * sr)
+        seg = audio[max(0, a) : max(0, b)]
+        if len(seg):
+            total += float(np.sum(np.square(seg, dtype=np.float64)))
+            count += seg.size
+    return total / count if count else 0.0
+
+
+def gain(audio, data: dict) -> float:
+    """What the render is multiplied by: to the level asked for ("level_db":
+    the power while the notes sound, dB re full scale -- the level the part
+    has in the song, app/score/swam.py stem_level_db), never past a peak of
+    0.97; without one, to a peak of 0.89."""
+    import numpy as np
+
+    peak = float(np.abs(audio).max()) or 1.0
+    level = data.get("level_db")
+    power = spans_power(audio, SR, data["notes"]) if level is not None else 0.0
+    if level is None or power <= 0:
+        return 0.89 / peak
+    return min(10 ** (float(level) / 20) / power**0.5, 0.97 / peak)
+
+
 def render(data: dict, out: Path) -> None:
     import dawdreamer as daw
-    import numpy as np
     import soundfile as sf
 
     eng = daw.RenderEngine(SR, BLOCK)
@@ -215,8 +244,7 @@ def render(data: dict, out: Path) -> None:
         print("progress 0.05", flush=True)
         eng.render(duration)
         audio = eng.get_audio().T
-    peak = float(np.abs(audio).max()) or 1.0
-    audio = audio * (0.89 / peak)
+    audio = audio * gain(audio, data)
     tmp_out = out.with_name(f".{out.name}.part.flac")
     sf.write(str(tmp_out), audio.astype("float32"), SR, format="FLAC")
     tmp_out.replace(out)

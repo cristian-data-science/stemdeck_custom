@@ -352,6 +352,8 @@ class SwamBody(BaseModel):
     notes: list[SwamNote] = Field(max_length=8000)
     room: str = Field(default="medium", pattern=r"^(dry|medium|large)$")  # «Sala»
     tone: str = Field(default="clean", pattern=r"^(clean|soft|growl)$")  # «Tono»
+    # The stem the line is of: the render is made as loud as it is in the song.
+    stem: str | None = Field(default=None, pattern=r"^[a-z_]{2,20}$")
 
 
 def _swam_folder(job_id: str) -> Path:
@@ -379,6 +381,13 @@ async def swam_render(job_id: str, body: SwamBody) -> JSONResponse:
     if body.sax not in info["saxes"]:
         raise HTTPException(status_code=404, detail="SWAM Saxophones not found")
     payload = body.model_dump()
+    stem = payload.pop("stem", None)
+    if stem:
+        level = await asyncio.to_thread(
+            swam.stem_level_db, store.stem_wav(job_id, stem), payload["notes"]
+        )
+        if level is not None:
+            payload["level_db"] = level
     key = swam.render_key(payload)
     st = swam.request(key, _swam_folder(job_id), payload, job_id)
     return JSONResponse({"key": key, **st, "url": _swam_url(job_id, key)})

@@ -885,6 +885,11 @@ hace sigue sonando la anterior.
 70 % (SWAM oscurece y airea el tono al soplar más suave: 8 dB menos sobre 5 kHz, medido) y su
 ruido de aire al máximo. *Rasgado*: el «Growl» de SWAM al 35 % (el volumen tiembla a 20-90 Hz:
 +3 dB, medido). El parámetro «Breath Noise» solo casi no cambia el sonido a soplido normal (medido).
+**Volumen**: la grabación se deja al nivel que la parte tiene en la canción (`swam.stem_level_db`:
+la potencia del stem mientras suenan las notas; `swam_render.gain`), no a un pico fijo, y nunca
+sobre un pico de 0,97. Los controles 🎷 y 🎶 parten en 80 % y 70 %: con ellos ahí, el balance es el
+de la canción. Careless Whisper: «Otros» suena a −18,5 dB; antes el saxo salía a −14,1 dB (4,4 dB
+más fuerte que el original), ahora a −18,5 dB.
 Variables: `STEMDECK_SWAM_DIR`, `STEMDECK_SWAM_PYTHON`, `STEMDECK_SWAM_OFF=1`.
 
 **Las notas de la voz** (sin RMVPE) no salen solo del modelo de transcripción (Basic Pitch, hecho para

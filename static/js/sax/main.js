@@ -965,6 +965,7 @@ function swamPayload() {
     cents: Math.round((state.cents || 0) * 10) / 10,
     room: ["dry", "large"].includes(prefs.room) ? prefs.room : "medium",
     tone: ["soft", "growl"].includes(prefs.tone) ? prefs.tone : "clean",
+    stem: state.stems[0], // as loud as this part is in the song
     notes: state.notes.map((n) => {
       const out = { start: r2(n.start), end: r2(n.end), midi: n.midi, velocity: Math.max(1, Math.min(127, Math.round(n.velocity ?? 80))), legato: !!n.legato };
       const c = exact ? null : curveOf(n, 1);

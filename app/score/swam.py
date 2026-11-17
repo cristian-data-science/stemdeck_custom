@@ -19,9 +19,11 @@ score/audio/swam-<key>.flac (cleaned with "cache").
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import subprocess
@@ -132,6 +134,50 @@ def plugin_params(payload: dict) -> dict[str, float]:
     return params
 
 
+# The saxophone at the level the part has in the song. The page's faders
+# start at 80 % (the saxophone) and 70 % (the rest of the song): the render
+# is made this much under the part's own level, so that with the faders
+# where they start the balance is the song's own.
+BALANCE_DB = -1.2  # 20 log10(0.7 / 0.8)
+LEVEL_FRAME = 0.02  # s
+
+
+@functools.lru_cache(maxsize=8)
+def _stem_power(path: str, mtime_ns: int):
+    """The stem's power every LEVEL_FRAME (all channels), read once."""
+    import numpy as np
+    import soundfile as sf
+
+    with sf.SoundFile(path) as f:
+        sr = f.samplerate
+        hop = max(1, int(sr * LEVEL_FRAME))
+        out = []
+        for block in f.blocks(blocksize=hop * 2000, dtype="float32", always_2d=True):
+            n = len(block) // hop
+            if n:
+                out.append(
+                    np.mean(np.square(block[: n * hop], dtype=np.float64).reshape(n, -1), axis=1)
+                )
+    return np.concatenate(out) if out else np.zeros(0)
+
+
+def stem_level_db(wav: Path, notes: list[dict]) -> float | None:
+    """How loud the part is in the song while these notes sound (dB re full
+    scale, to half a dB), less BALANCE_DB; None when it cannot be told."""
+    import numpy as np
+
+    try:
+        power = _stem_power(str(wav), wav.stat().st_mtime_ns)
+    except (OSError, RuntimeError):
+        return None
+    on = np.zeros(len(power), dtype=bool)
+    for n in notes:
+        on[int(float(n["start"]) / LEVEL_FRAME) : int(float(n["end"]) / LEVEL_FRAME) + 1] = True
+    if not on.any() or float(power[on].mean()) <= 1e-10:
+        return None
+    return round((10 * math.log10(float(power[on].mean())) + BALANCE_DB) * 2) / 2
+
+
 def _performance(payload: dict) -> dict:
     """What decides the sound: the events SWAM gets, which saxophone, for how
     long, and SWAM's own vibrato or not (swam_render.render)."""
@@ -150,6 +196,7 @@ def _performance(payload: dict) -> dict:
         "duration": payload["duration"],
         "expressive": any(n.get("curve") for n in payload["notes"]),
         "params": plugin_params(payload),
+        "level_db": payload.get("level_db"),
         "events": swam_render.events(data),
     }
 
@@ -242,6 +289,7 @@ def _render(key: str, dest: Path, payload: dict) -> None:
         "notes": payload["notes"],
         "blow": _tone(payload)["blow"],
         "params": plugin_params(payload),
+        "level_db": payload.get("level_db"),
     }
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:

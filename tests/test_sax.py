@@ -550,3 +550,32 @@ def test_swam_tone_is_how_it_is_blown():
         return max(b[2] for t, b in ev if b[0] == 0xB0)
 
     assert top(swam.TONES["soft"]["blow"]) < top(1.0) * 0.75
+
+
+def test_swam_is_made_as_loud_as_the_part_is_in_the_song(tmp_path):
+    """The render is brought to the level the stem has while the notes sound
+    (less the page's starting balance), not to a fixed peak; never clipped."""
+    from app.score import swam
+    from app.score import swam_render as R
+
+    sr = 44100
+    t = np.arange(sr * 4) / sr
+    part = 0.1 * np.sin(2 * np.pi * 440 * t)  # -23 dB while it plays
+    part[: sr] = 0  # silent before the note: not counted
+    wav = tmp_path / "other.wav"
+    sf.write(wav, np.stack([part, part], axis=1).astype("float32"), sr)
+    notes = [{"start": 1.0, "end": 4.0, "midi": 69}]
+    level = swam.stem_level_db(wav, notes)
+    assert level == pytest.approx(-23.0 + swam.BALANCE_DB, abs=0.5)
+    assert swam.stem_level_db(tmp_path / "gone.wav", notes) is None
+    # A render much louder than that is brought down to it...
+    render = np.stack([0.8 * np.sin(2 * np.pi * 220 * t)] * 2, axis=1)
+    render[: sr] = 0
+    g = R.gain(render, {"notes": notes, "level_db": level})
+    assert 10 * np.log10(R.spans_power(render * g, sr, notes)) == pytest.approx(level, abs=0.1)
+    # ...one that would clip to get there stops at the peak; none asked: the peak as before.
+    assert np.abs(render * R.gain(render, {"notes": notes, "level_db": 6.0})).max() == pytest.approx(0.97, abs=1e-6)
+    assert np.abs(render * R.gain(render, {"notes": notes})).max() == pytest.approx(0.89, abs=1e-6)
+    # The level is part of what names a render.
+    payload = {"sax": "alto", "duration": 5.0, "notes": [{**notes[0], "velocity": 80, "legato": False, "curve": None}]}
+    assert swam.render_key({**payload, "level_db": level}) != swam.render_key(payload)
