@@ -183,32 +183,47 @@ function buildTimeline(ctx, notes, measures) {
   return monotoneTimeline([...points.values()]);
 }
 
-/** Move the cursor rectangle to x on system `sys`. */
+/** Move the cursor to x (the score's SVG units) on system `sys`.
+ *
+ *  A layer of its own over the score (an HTML box moved by a transform),
+ *  not a rectangle inside the SVG: moving that one every frame repainted
+ *  the whole engraving (tens of thousands of elements), and the score ran
+ *  at 20 frames a second while it played. Where the system is, and how SVG
+ *  units become pixels, is read once per system (and again if the score's
+ *  width changes). Its "x" attribute keeps the position in SVG units. */
 export function placeCursor(ctx, x, sys) {
   if (!sys) return;
-  const host = sys.closest("g.page-margin") || sys.parentNode;
-  if (!ctx.cursor || ctx.cursor.ownerSVGElement !== host.ownerSVGElement) {
+  const host = ctx.container;
+  if (!ctx.cursor || !ctx.cursor.isConnected) {
     ctx.cursor?.remove();
-    ctx.cursor = document.createElementNS(SVG_NS, "rect");
-    ctx.cursor.setAttribute("class", "sd-cursor");
+    ctx.cursor = document.createElement("div");
+    ctx.cursor.className = "sd-cursor";
     host.insertBefore(ctx.cursor, host.firstChild);
+    ctx.cursorSys = null;
   }
-  if (ctx.cursorSys !== sys) {
+  const width = host.clientWidth;
+  if (ctx.cursorSys !== sys || !ctx.cursorMap || ctx.cursorMap.width !== width) {
+    const g = sys.closest("g.page-margin") || sys.parentNode;
+    const m = g.getScreenCTM();
+    const c = host.getBoundingClientRect();
     const b = sys.getBBox();
-    ctx.cursor.setAttribute("y", b.y - 60);
-    ctx.cursor.setAttribute("height", b.height + 120);
+    const k = m.a; // px per SVG unit
+    ctx.cursorMap = { width, k, ox: m.e - c.left, top: m.f + m.d * (b.y - 60) - c.top };
+    ctx.cursor.style.width = `${90 * k}px`;
+    ctx.cursor.style.height = `${(b.height + 120) * m.d}px`;
     ctx.cursorSys = sys;
   }
   const w = 90;
-  ctx.cursor.setAttribute("width", w);
+  const { ox, k, top } = ctx.cursorMap;
+  ctx.cursor.style.transform = `translate3d(${ox + k * (x - w / 2)}px, ${top}px, 0)`;
   ctx.cursor.setAttribute("x", x - w / 2);
-  ctx.cursor.setAttribute("stroke-width", 8);
 }
 
 export function hideCursor(ctx) {
   ctx.cursor?.remove();
   ctx.cursor = null;
   ctx.cursorSys = null;
+  ctx.cursorMap = null;
 }
 
 /** Replace the set of elements carrying `cls` by those of `ids`. */

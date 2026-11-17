@@ -111,7 +111,11 @@ kbd {
 .sc-score g.note.sd-selected .sd-pill.hollow text { fill: #fff; }
 .sc-score g.note.sd-doomed .sd-pill rect,
 .sc-score g.note.sd-doomed .notehead use { fill: #d0312d; stroke: #d0312d; opacity: 0.85; }
-.sc-score .sd-cursor { fill: rgba(228,87,46,0.18); stroke: rgba(228,87,46,0.9); }
+/* The cursor: a layer of its own under the notes (render.js placeCursor). */
+.sc-score { position: relative; }
+.sc-score svg { position: relative; z-index: 1; }
+.sc-score .sd-cursor { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; will-change: transform;
+  background: rgba(228,87,46,0.18); border: 1px solid rgba(228,87,46,0.75); box-sizing: border-box; }
 .sc-score g.harm { cursor: pointer; }
 /* Chord names in a bold sans like the reference sheet. The flat/sharp glyph
    is a tspan with its own font-family="Leipzig" attribute, which this

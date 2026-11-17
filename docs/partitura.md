@@ -463,7 +463,11 @@ banda (9 min), una grabación de piano solo (3:45) y la canción de calibración
   líneas del pentagrama, no de la caja del compás, que crece con los nombres de acordes) y nunca
   retrocede dentro de un sistema. Entre las actualizaciones del audio, el reloj del navegador lo
   hace avanzar en cada cuadro. En las cinco piezas reales se pasó de hasta 33 retrocesos y 40
-  saltos bruscos por pieza a 0 retrocesos y, como mucho, 1 salto.
+  saltos bruscos por pieza a 0 retrocesos y, como mucho, 1 salto. El cursor es una capa propia
+  sobre la partitura (`render.js placeCursor`: una caja HTML movida con `transform`), no un
+  rectángulo dentro del SVG: moverlo en cada cuadro repintaba todo el grabado (38 000 elementos en
+  una canción de 3304 notas). Medido ahí mientras suena: el 5 % de los cuadros más lentos pasó de
+  33 ms (un cuadro perdido) a 16,8 ms (ninguno).
 - **Cuánto suena cada nota.** Al reproducir (MIDI y Pianoteq), cada nota suena hasta donde el
   pianista soltó la tecla, según lo oyó el modelo. No hasta donde está dibujada: cada pentagrama
   se dibuja a una sola voz, así que una nota sostenida se dibuja solo hasta la siguiente nota de
