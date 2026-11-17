@@ -64,7 +64,7 @@ import {
 import { wireSeparation } from "./separation.js";
 import { GLIDE_START, flickSpeed, glideStep, trackFlick } from "./glide.js";
 import { fingeringFeature, wireSheetImport } from "./sheet-fingering.js";
-import { decorate, hideCursor, markNotes, noteIdOf, notesInRect, placeCursor, renderScore } from "./render.js";
+import { decorate, hideCursor, markNotes, noteIdOf, notesInRect, placeBar, placeCursor, renderScore } from "./render.js";
 
 const $ = (id) => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -2620,6 +2620,10 @@ function follow(t) {
   if (!ctx) return;
   state.playing = markNotes(ctx, "sd-playing", activeAt(state.index, t), state.playing);
   const pos = cursorAt(ctx.timeline, t);
+  // The bar sounding, lit (none before the first or after the last).
+  const measures = state.data?.measures || [];
+  const mi = measureAt(measures, t);
+  placeBar(ctx, mi >= 0 && t < measures[measures.length - 1].end ? measures[mi].number : null);
   if (pos) {
     placeCursor(ctx, pos.x, pos.sys);
     if (state.view.follow && pos.sys !== state.lastSys && (player.playing || state.forceFollow)) {

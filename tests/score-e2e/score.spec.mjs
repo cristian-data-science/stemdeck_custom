@@ -121,6 +121,23 @@ test("following: the notes sounding at t light up and the cursor advances", asyn
   for (let i = 1; i < xs.length; i++) expect(xs[i]).toBeGreaterThan(xs[i - 1]);
 });
 
+test("the bar sounding is lit with a band behind it, and the band moves with the song", async ({ page }) => {
+  await open(page, { names: false });
+  await page.waitForFunction(() => document.querySelector("#sc-audio").readyState >= 1);
+  const ms = await page.evaluate(() => window.__score.data.measures.slice(0, 3));
+  for (const m of ms) {
+    await page.evaluate((t) => window.__player.seek(t), (m.start + m.end) / 2);
+    await expect(page.locator(".sd-bar-now")).toHaveAttribute("data-bar", String(m.number));
+    await expect(page.locator(".sd-bar-now")).toBeVisible();
+    const [band, bar] = await page.evaluate((n) => [document.querySelector(".sd-bar-now"), document.querySelector(`#sc-score g.measure[id="m${n}"]`)].map((e) => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right }; }), m.number);
+    expect(band.l).toBeLessThanOrEqual(bar.l + 1);
+    expect(band.r).toBeGreaterThanOrEqual(bar.r - 1);
+  }
+  // Before the first bar: none.
+  await page.evaluate((t) => window.__player.seek(t), Math.max(0, ms[0].start - 0.5));
+  if (ms[0].start > 0.6) await expect(page.locator(".sd-bar-now")).toBeHidden();
+});
+
 test("real playback drives the follow loop", async ({ page }) => {
   await open(page);
   await page.evaluate(async () => {

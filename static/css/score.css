@@ -132,6 +132,10 @@ kbd {
 .sc-score.sd-zooming { overflow: hidden; }
 .sc-score.sd-zooming > svg { transform-origin: 0 0; }
 .sc-score.sd-zooming .sd-cursor { visibility: hidden; }
+/* The bar sounding (render.js placeBar): a soft band behind it, to follow from afar. */
+.sc-score .sd-bar-now { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; will-change: transform;
+  background: rgba(244, 183, 64, 0.13); border-radius: 6px; }
+.sc-score .sd-bar-now[hidden] { display: none; }
 .sc-score .sd-cursor { position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none; will-change: transform;
   background: rgba(228,87,46,0.18); border: 1px solid rgba(228,87,46,0.75); box-sizing: border-box; }
 .sc-score g.harm { cursor: pointer; }
@@ -180,7 +184,7 @@ kbd {
   html, body { background: #fff; }
   .sc-scroll { padding: 0; }
   .sc-score { box-shadow: none; padding: 0; }
-  .sc-score .sd-cursor { display: none; }
+  .sc-score .sd-cursor, .sc-score .sd-bar-now { display: none; }
 }
 
 .sc-source-pick { display: flex; margin: 0 0 12px; }

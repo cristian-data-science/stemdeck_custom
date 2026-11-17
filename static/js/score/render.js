@@ -219,6 +219,35 @@ export function placeCursor(ctx, x, sys) {
   ctx.cursor.setAttribute("x", x - w / 2);
 }
 
+/** The bar sounding, lit with a soft band behind it (a layer of its own,
+ *  as the cursor; moved only when the bar changes). `number`: the bar's
+ *  number (its SVG group is "m<number>"); null takes the band away. */
+export function placeBar(ctx, number) {
+  const host = ctx.container;
+  const width = host.clientWidth;
+  if (ctx.barShown === number && ctx.barWidth === width && ctx.bar?.isConnected) return;
+  ctx.barShown = number;
+  ctx.barWidth = width;
+  const el = number != null ? host.querySelector(`g.measure[id="m${number}"]`) : null;
+  if (!el) {
+    if (ctx.bar) ctx.bar.hidden = true;
+    return;
+  }
+  if (!ctx.bar || !ctx.bar.isConnected) {
+    ctx.bar = document.createElement("div");
+    ctx.bar.className = "sd-bar-now";
+    host.insertBefore(ctx.bar, host.firstChild);
+  }
+  const r = el.getBoundingClientRect();
+  const c = host.getBoundingClientRect();
+  const pad = 6;
+  ctx.bar.hidden = false;
+  ctx.bar.style.transform = `translate3d(${r.left - c.left - pad / 2}px, ${r.top - c.top - pad}px, 0)`;
+  ctx.bar.style.width = `${r.width + pad}px`;
+  ctx.bar.style.height = `${r.height + 2 * pad}px`;
+  ctx.bar.dataset.bar = String(number);
+}
+
 export function hideCursor(ctx) {
   ctx.cursor?.remove();
   ctx.cursor = null;

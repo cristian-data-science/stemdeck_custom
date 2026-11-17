@@ -472,6 +472,9 @@ banda (9 min), una grabación de piano solo (3:45) y la canción de calibración
   rectángulo dentro del SVG: moverlo en cada cuadro repintaba todo el grabado (38 000 elementos en
   una canción de 3304 notas). Medido ahí mientras suena: el 5 % de los cuadros más lentos pasó de
   33 ms (un cuadro perdido) a 16,8 ms (ninguno).
+- **El compás que suena** se ilumina con una franja suave detrás (`render.js placeBar`, otra capa
+  propia que solo se mueve al cambiar de compás), para seguir la partitura desde lejos. La
+  fluidez medida no cambia (5 % de cuadros más lentos: 16,8 ms).
 - **Zoom.** Mientras se arrastra el control, lo dibujado se escala al instante (una vista
   previa: los renglones se cortan donde estaban); al soltarlo la partitura se graba de nuevo a ese
   tamaño (~0,5 s de Verovio en una canción de 3304 notas, 0,75 s en total) y la página vuelve al
