@@ -1676,6 +1676,43 @@ test("🎷 Saxo Bucle: A and B at the bars sounding, past B back to A, kept for 
   expect(errors).toEqual([]);
 });
 
+test("🎷 Saxo Metrónomo y Cuenta: a click on each beat of the song, the bar's first accented; a bar counted before ▶", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto(`/sax/?job=5c0de0000001&stems=piano`);
+  await page.waitForFunction(() => window.__sax?.notes?.length > 5 && window.__sax.bars && document.querySelector("#sx-audio").readyState >= 1);
+  await expect(page.locator("#sx-metronome")).toBeVisible();
+  await page.evaluate(() => { document.querySelector("#sx-audio").currentTime = 0.8; });
+  await page.locator("#sx-metronome").check();
+  await page.locator("#sx-play").click();
+  // The fixture: 90 BPM in 4 from 1 s (a beat every 0.667 s).
+  await expect.poll(() => page.evaluate(() => window.__saxMetro.clicks.length), { timeout: 8000 }).toBeGreaterThanOrEqual(5);
+  await page.locator("#sx-play").click();
+  const clicks = await page.evaluate(() => window.__saxMetro.clicks.slice(0, 5));
+  expect(clicks.map((c) => Number(c.t.toFixed(2)))).toEqual([1, 1.67, 2.33, 3, 3.67]);
+  expect(clicks.map((c) => c.accent)).toEqual([true, false, false, false, true]);
+  // «Cuenta: 1 compás»: four clicks at the tempo, the song starting after them.
+  await page.locator("#sx-metronome").uncheck();
+  await page.locator("#sx-countin").selectOption("bar");
+  await page.evaluate(() => { document.querySelector("#sx-audio").currentTime = 4; });
+  await page.locator("#sx-play").click();
+  await expect(page.locator("#sx-play")).toHaveText("…");
+  await page.waitForTimeout(1500);
+  expect(await page.evaluate(() => document.querySelector("#sx-audio").paused)).toBe(true); // still counting (2.67 s)
+  expect(await page.evaluate(() => window.__saxMetro.counted)).toBe(4);
+  await expect.poll(() => page.evaluate(() => !document.querySelector("#sx-audio").paused), { timeout: 5000 }).toBe(true);
+  await page.locator("#sx-play").click();
+  // ▶ again during the count calls it off.
+  await page.locator("#sx-play").click();
+  await expect(page.locator("#sx-play")).toHaveText("…");
+  await page.locator("#sx-play").click();
+  await expect(page.locator("#sx-play")).toHaveText("▶");
+  await page.waitForTimeout(3000);
+  expect(await page.evaluate(() => document.querySelector("#sx-audio").paused)).toBe(true);
+  await page.locator("#sx-countin").selectOption("0");
+  expect(errors).toEqual([]);
+});
+
 test("🎷 Saxo ✏️ Editar ＋ Nota: a note put in (button, double tap), moved, stretched, kept, taken out", async ({ page }) => {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));

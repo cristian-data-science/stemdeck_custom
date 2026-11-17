@@ -172,3 +172,7 @@ body.sx-horn-chart .sx-horn { width: clamp(220px, 25vw, 340px); }
 .sx-loop-label { color: #9aa3b5; font-size: 13px; margin-right: 2px; }
 .sx-loop button:disabled { opacity: 0.35; cursor: default; }
 .sx-loop-info { color: #f4b740; font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* «Metrónomo» */
+.sx-check { cursor: pointer; }
+.sx-check input { accent-color: #f4b740; width: 16px; height: 16px; margin: 0 2px 0 0; vertical-align: -3px; }

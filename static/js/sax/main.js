@@ -12,7 +12,7 @@ import { SmoothClock } from "../score/model.js";
 import { buildChart } from "./chart.js";
 import { buildHorn } from "./horn.js";
 import { HIT_X, SaxLane } from "./lane.js";
-import { barGrid, barSpanAt, beatIndexAt } from "./beats.js";
+import { barGrid, barSpanAt, beatIndexAt, beatSecondsAt } from "./beats.js";
 import { SAXES, around, breaths, fingering, concertRange, fitRange, melodyFrom, noteGroups, noteName, phrase, phrasingOf, pitchColor, skyline, slur, staffStep, written } from "./melody.js";
 import { MicPitch, judge } from "./mic.js";
 import { SaxSampler, SaxSynth } from "./synth.js";
@@ -406,6 +406,12 @@ async function togglePlay() {
     audio.pause();
     return;
   }
+  // ▶ again during the count: called off.
+  if ($("sx-play").textContent === "…") {
+    metro.counting += 1;
+    $("sx-play").textContent = "▶";
+    return;
+  }
   // ▶ while the song's audio is still being found (a missing backing, then
   // the next file): it plays once loaded, not "no supported source".
   if (audio.readyState < 1) {
@@ -413,6 +419,7 @@ async function togglePlay() {
     return;
   }
   try {
+    if (!(await countIn())) return;
     await audio.play();
   } catch (e) {
     status(`No se pudo reproducir: ${e.message}`);
@@ -1214,6 +1221,66 @@ function listen(t, now) {
   }
 }
 
+// ── «Metrónomo» and «Cuenta» ────────────────────────────────────────────
+//
+// A click on each of the song's beats (the first of a bar higher), and a
+// count of one or two bars before ▶ starts the song, at the tempo there.
+
+const metro = { until: 0, counting: 0, clicks: [] }; // clicks: the last ones scheduled (tests)
+window.__saxMetro = metro;
+
+/** A click at the audio clock's `when`: a short tick, higher on a bar's first beat. */
+function click(when, accent) {
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = "square";
+  o.frequency.value = accent ? 1760 : 1175;
+  g.gain.setValueAtTime(0.0001, when);
+  g.gain.exponentialRampToValueAtTime(accent ? 0.22 : 0.14, when + 0.002);
+  g.gain.exponentialRampToValueAtTime(0.0001, when + 0.05);
+  o.connect(g).connect(ctx.destination);
+  o.start(when);
+  o.stop(when + 0.06);
+}
+
+/** The beats coming in the next moment, clicked (scheduled a little ahead). */
+function metronome(t) {
+  const g = state.bars;
+  if (!prefs.metronome || !g || !ctx || !state.playing) {
+    metro.until = t;
+    return;
+  }
+  const rate = audio.playbackRate || 1;
+  if (metro.until < t - 0.5 || metro.until > t + 1) metro.until = t; // a seek, a loop
+  const until = t + 0.25 * rate;
+  for (let i = Math.max(0, beatIndexAt(g.times, metro.until) + 1); i < g.times.length && g.times[i] <= until; i++) {
+    if (g.times[i] <= metro.until) continue;
+    click(ctx.currentTime + Math.max(0, (g.times[i] - t) / rate), g.down[i]);
+    metro.clicks.push({ t: g.times[i], accent: g.down[i] });
+    if (metro.clicks.length > 64) metro.clicks.shift();
+  }
+  metro.until = until;
+}
+
+/** «Cuenta»: the clicks of one or two bars, then the song. Resolves false
+ *  when ▶ is pressed again meanwhile (the count is called off). */
+function countIn() {
+  const bars = prefs.countIn === "2bar" ? 2 : prefs.countIn === "bar" ? 1 : 0;
+  if (!bars || !ctx) return Promise.resolve(true);
+  const t = audio.currentTime || 0;
+  const g = state.bars;
+  const per = (g && g.per[Math.max(0, beatIndexAt(g.times, t))]) || 4;
+  const beat = beatSecondsAt(g, t, 0.5) / (audio.playbackRate || 1);
+  const n = bars * per;
+  const ticket = ++metro.counting;
+  for (let k = 0; k < n; k++) click(ctx.currentTime + 0.05 + k * beat, k % per === 0);
+  metro.counted = n;
+  $("sx-play").textContent = "…";
+  return new Promise((resolve) => {
+    setTimeout(() => resolve(ticket === metro.counting), (0.05 + n * beat) * 1000);
+  });
+}
+
 // ── «Bucle» ─────────────────────────────────────────────────────────────
 //
 // A part of the song repeated to study it: A at the start of the bar that
@@ -1293,6 +1360,7 @@ function frame() {
   }
   state.t = t;
   schedule(t);
+  metronome(t);
   listen(t, now);
   lane.draw(t, state.playing);
   showNotes(t);
@@ -1314,6 +1382,17 @@ function wire() {
     savePrefs();
     rebuild();
     loadSamples();
+  };
+  $("sx-metronome").checked = !!prefs.metronome;
+  $("sx-metronome").onchange = () => {
+    prefs.metronome = $("sx-metronome").checked;
+    savePrefs();
+    ensureAudio();
+  };
+  $("sx-countin").value = ["bar", "2bar"].includes(prefs.countIn) ? prefs.countIn : "0";
+  $("sx-countin").onchange = () => {
+    prefs.countIn = $("sx-countin").value;
+    savePrefs();
   };
   $("sx-loop-a").onclick = () => setLoopPoint("a");
   $("sx-loop-b").onclick = () => setLoopPoint("b");
@@ -1477,6 +1556,7 @@ async function start() {
     state.bars = barGrid(await api(`/api/jobs/${JOB}/beats`).catch(() => null));
     lane.bars = state.bars; // drawn on the staff: beats, bars and their numbers
     showLoop(); // a loop kept from before, named by its bars
+    for (const f of document.querySelectorAll(".sx-beats-only")) f.hidden = !state.bars; // the metronome needs the song's beats
   } catch (e) {
     status(`No se encontró la canción: ${e.message}`);
     return;

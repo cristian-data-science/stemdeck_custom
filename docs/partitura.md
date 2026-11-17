@@ -839,6 +839,8 @@ La barra de edición es una fila propia sobre el pentagrama (antes flotaba encim
 
 **Bucle** (abajo): **A** marca el inicio en el compás que está sonando y **B** el final (B sin A repite ese compás); al pasar B la canción vuelve a A. 🔁 lo apaga sin perderlo y ✕ lo quita. La parte repetida se ve iluminada en el pentagrama, con A y B. Se guarda por canción en el navegador. Sin rejilla de pulsos, A y B son el momento exacto.
 
+**Metrónomo** y **Cuenta** (abajo; solo si la canción tiene rejilla de pulsos): el metrónomo da un clic en cada pulso de la canción, más agudo en el primero de cada compás, a la velocidad de práctica. «Cuenta: 1 compás / 2 compases» hace sonar esos clics al pulsar ▶, al tempo de ese punto, y después empieza la canción; ▶ otra vez durante la cuenta la cancela.
+
 **Arrastrar la pista** (como las notas cayendo del piano): con el clic (o el dedo) sobre la pista, la canción se mueve con el puntero; si sonaba, se pausa mientras arrastras y sigue al soltar. En «Editar», arrastrar sobre el espacio vacío hace lo mismo.
 
 **La franja de arriba** muestra la frase que se toca (hasta la próxima respiración; máximo 10 notas, cortada en su pausa más larga), toda de una vez y de un solo color: la que suena en dorado, las ya tocadas atenuadas, cada una un poco más arriba o abajo según la melodía; después de «luego», el inicio de la frase siguiente. Cambia solo al pasar de frase (antes: nueve notas de colores distintos que se corrían en cada nota).

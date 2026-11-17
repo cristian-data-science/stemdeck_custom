@@ -112,6 +112,17 @@
         <button type="button" id="sx-loop-clear" title="Quitar el bucle" disabled>✕</button>
         <span class="sx-loop-info" id="sx-loop-info"></span>
       </span>
+      <label class="sx-field sx-check sx-beats-only" hidden title="Metrónomo: un clic en cada pulso de la canción (más agudo en el primero de cada compás)">
+        <input type="checkbox" id="sx-metronome" /> Metrónomo
+      </label>
+      <label class="sx-field sx-beats-only" hidden title="Cuenta: al pulsar ▶ suenan los clics de uno o dos compases, al tempo de ese punto, y luego empieza la canción">
+        Cuenta
+        <select id="sx-countin">
+          <option value="0">no</option>
+          <option value="bar">1 compás</option>
+          <option value="2bar">2 compases</option>
+        </select>
+      </label>
       <label class="sx-field" id="sx-engine-field" hidden
              title="SWAM: un saxo por modelado físico (Audio Modeling SWAM Saxophones, instalado en este PC), con transiciones, respiración y dinámica de verdad; graba la línea en unos segundos. Grabado: notas sueltas de un saxo real (Iowa), al instante">
         Saxo
