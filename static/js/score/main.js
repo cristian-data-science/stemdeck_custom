@@ -354,6 +354,8 @@ async function load(data) {
   $("sc-chips").hidden = false;
   $("sc-export").hidden = false;
   const job = await api(`/api/jobs/${JOB}`).catch(() => null);
+  // The song's length at once (it said 0:00 until the audio had loaded).
+  if (job?.duration && !player.duration) $("sc-total").textContent = formatTime(job.duration);
   const stems = (job?.stems || []).map((s) => s.name || s);
   player.setUrls({
     // FLAC (lossless, seeks to the sample): switching between the stem, the

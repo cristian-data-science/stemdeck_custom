@@ -1148,6 +1148,22 @@ test("the menu in order: the transcription's settings folded under «🎼 Ajuste
   await expect(page.locator("#sc-dl-mid")).toBeHidden();
 });
 
+test("the song's length is shown at once, before its audio has loaded", async ({ page }) => {
+  // The audio held back: the length still shows, from the song.
+  let release;
+  const held = new Promise((r) => (release = r));
+  await page.route("**/score/audio/**", async (route) => {
+    await held;
+    await route.continue();
+  });
+  await open(page, { names: false });
+  const job = await (await page.request.get("/api/jobs/5c0de0000001")).json();
+  const want = `${Math.floor(job.duration / 60)}:${String(Math.floor(job.duration % 60)).padStart(2, "0")}`;
+  expect(await page.evaluate(() => document.getElementById("sc-audio").readyState)).toBe(0);
+  await expect(page.locator("#sc-total")).toHaveText(want);
+  release();
+});
+
 test("each view shows its own controls: the score's (zoom, names, settings, editing) not on the piano, the piano's not on the score", async ({ page }) => {
   await open(page);
   const scoreOnly = ["#sc-zoom", "#sc-follow", "#sc-names", "#sc-settings-toggle", "#sc-undo", "#sc-add", "#sc-status"];
