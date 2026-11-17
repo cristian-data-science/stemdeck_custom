@@ -1756,6 +1756,84 @@ test("🎷 Saxo on a tablet: the notation folds into «⚙ Notas» (one header r
   expect(errors).toEqual([]);
 });
 
+test("🎷 Saxo ✏️ Editar, varias notas: picked with Mayús or «Varias» or a box, moved and deleted together (one ↶), joined into one", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const JOB = "5c0de0000001";
+  await page.request.put(`/api/jobs/${JOB}/sax/edits`, { data: { set: "piano|clean", edits: {} } });
+  await page.goto(`/sax/?job=${JOB}&stems=piano`);
+  await page.waitForFunction(() => window.__sax?.notes?.length > 5 && window.__saxLane.hits.length > 3);
+  await page.locator("#sx-edit").click();
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const box = await page.locator("#sx-lane").boundingBox();
+  const hit = (i) => page.evaluate((k) => window.__saxLane.hits[k], i);
+  const tap = async (i, { shift = false } = {}) => {
+    const h = await hit(i);
+    if (shift) await page.keyboard.down("Shift");
+    await page.mouse.click(box.x + h.x + Math.min(h.w / 2, 12), box.y + h.y + h.h / 2);
+    if (shift) await page.keyboard.up("Shift");
+    return h;
+  };
+  const picked = () => page.evaluate(() => [window.__saxEdit.selected, ...window.__saxEdit.more].filter(Boolean).sort());
+  const note = (key) => page.evaluate((k) => { const n = window.__sax.notes.find((x) => x.key === k); return n ? { midi: n.midi, start: n.start, end: n.end } : null; }, key);
+  // Mayús + clic: two notes picked; ↑ moves both; one ↶ takes both back.
+  const a = await tap(1);
+  const b = await tap(2, { shift: true });
+  expect(await picked()).toEqual([a.key, b.key].sort());
+  await expect(page.locator("#sx-edit-info")).toHaveText("2 notas elegidas");
+  await expect(page.locator("#sx-join")).toBeEnabled();
+  await page.keyboard.press("ArrowUp");
+  expect((await note(a.key)).midi).toBe(a.midi + 1);
+  expect((await note(b.key)).midi).toBe(b.midi + 1);
+  await page.keyboard.press("Control+z");
+  expect((await note(a.key)).midi).toBe(a.midi);
+  expect((await note(b.key)).midi).toBe(b.midi);
+  // Mayús + clic again on one: out of the group.
+  await tap(2, { shift: true });
+  expect(await picked()).toEqual([a.key]);
+  // «Unir»: the two become one, from the first's start to the second's end.
+  await tap(2, { shift: true });
+  const [na, nb] = [await note(a.key), await note(b.key)];
+  const count = await page.evaluate(() => window.__sax.notes.length);
+  await page.locator("#sx-join").click();
+  expect(await page.evaluate(() => window.__sax.notes.length)).toBe(count - 1);
+  expect((await note(a.key)).start).toBeCloseTo(na.start, 2);
+  expect((await note(a.key)).end).toBeCloseTo(nb.end, 2);
+  expect(await note(b.key)).toBe(null);
+  await page.keyboard.press("Control+z");
+  expect(await page.evaluate(() => window.__sax.notes.length)).toBe(count);
+  // «Varias»: taps add up; a box dragged over the staff picks what is in it.
+  await page.keyboard.press("Escape");
+  await page.locator("#sx-multi").click();
+  await expect(page.locator("#sx-edit-info")).toHaveText("Toca las notas");
+  await tap(3);
+  await tap(4);
+  expect((await picked()).length).toBe(2);
+  await page.keyboard.press("Escape");
+  const hits = await page.evaluate(() => window.__saxLane.hits.slice(0, 5));
+  const x0 = Math.min(...hits.map((h) => h.x)) - 6;
+  const x1 = Math.max(...hits.map((h) => h.x + h.w)) + 6;
+  await page.mouse.move(box.x + x0, box.y + box.height - 12);
+  await page.mouse.down();
+  await page.mouse.move(box.x + (x0 + x1) / 2, box.y + box.height / 2, { steps: 4 });
+  await page.mouse.move(box.x + x1, box.y + 30, { steps: 4 });
+  // The notes the box covers (it spans the staff's height: any note in those seconds).
+  const inBox = await page.evaluate(([a, b]) => window.__saxLane.hits.filter((h) => h.x + h.w >= a && h.x <= b).length, [x0, x1]);
+  await page.mouse.up();
+  expect(inBox).toBeGreaterThanOrEqual(5);
+  expect((await picked()).length).toBe(inBox);
+  // 🗑: all of them, one change undone at once.
+  await page.locator("#sx-del").click();
+  expect(await page.evaluate(() => window.__sax.notes.length)).toBe(count - inBox);
+  await page.locator("#sx-undo").click();
+  expect(await page.evaluate(() => window.__sax.notes.length)).toBe(count);
+  // Ctrl+A: every note.
+  await page.locator("#sx-multi").click();
+  await page.keyboard.press("Control+a");
+  expect((await picked()).length).toBe(count);
+  expect(errors).toEqual([]);
+});
+
 test("🎷 Saxo ✏️ Editar ＋ Nota: a note put in (button, double tap), moved, stretched, kept, taken out", async ({ page }) => {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));

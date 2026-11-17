@@ -833,6 +833,8 @@ Al borrar, queda elegida la siguiente: una racha de notas basura sale tecla por 
 
 **＋ Nota**: agrega una nota donde está la canción, a la altura de la nota elegida o de la más cercana (botón o tecla N), o con doble clic en un lugar vacío del pentagrama (en ese momento y a esa altura). Queda elegida y se mueve, se alarga y se borra como las demás; se guarda como `add|inicio|altura` con su largo (`len`).
 
+**Varias notas**: Mayús o Ctrl + clic suma una nota a las elegidas (o la saca); con **☑ Varias** activo, cada toque suma (para tablet) y arrastrar sobre el pentagrama vacío elige las que quedan dentro del recuadro; Ctrl+A las elige todas. Lo que se haga (▲▼, 8↑↓, ◀▶, Corta/Larga, arrastrar, 🗑) se aplica a todas juntas y se deshace de una vez. **⧓ Unir** (U) junta las elegidas en una sola nota, desde el inicio de la primera hasta el final de la última, a la altura de la primera: para una nota sostenida que el detector cortó en pedazos.
+
 La barra de edición es una fila propia sobre el pentagrama (antes flotaba encima y tapaba las notas agudas; en tablet, un tercio del pentagrama). El texto de la nota elegida y el contador de cambios tienen ancho fijo: elegir o editar una nota no cambia el alto de la barra ni mueve el pentagrama bajo el puntero.
 
 **La barra de abajo**, en filas según para qué sirven: (1) tocar la canción (▶, tiempo, posición, velocidad) y los modos (✏️ Editar, 🎤 Practicar); (2) estudiarla (Bucle, Metrónomo, Cuenta, Vista) y lo que se oye (Escuchar, los dos volúmenes y **🎚 Sonido**, un menú con lo que se ajusta una vez: el saxo, la sala, el tono y la expresión); (3) qué está pasando (el saxo que suena, las notas, los avisos).

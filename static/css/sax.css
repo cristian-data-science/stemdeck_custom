@@ -228,3 +228,6 @@ body.sx-horn-hidden .sx-horn { display: none; }
   font: 700 13px Inter, sans-serif; color: #c9d1e3; background: rgba(18, 23, 42, 0.9); border: 1px solid #2b3350; border-left: 0;
   border-radius: 0 12px 12px 0; }
 .sx-horn-show[hidden] { display: none; }
+
+/* «Varias»: several notes picked at once. */
+.sx-editbar button[aria-pressed="true"] { border-color: #f4b740; color: #fff; background: rgba(244, 183, 64, 0.16); }

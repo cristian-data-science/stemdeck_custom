@@ -32,6 +32,8 @@ export class SaxLane {
     this.size = { w: 1, h: 1 };
     this.hits = []; // [{id, x, y, w, h}] last drawn: tests, taps
     this.selected = null; // «✏️ Editar»: the key of the note picked
+    this.selectedMore = new Set(); // ...and of the others picked with it
+    this.band = null; // a box being dragged to pick several: {x0, y0, x1, y1}
     this.bars = null; // the song's beats and bars (beats.js barGrid), or none
     this.barMarks = []; // [{x, bar}] the bar lines last drawn: tests
     this.loop = null; // «Bucle»: {a, b} s, or none
@@ -212,7 +214,7 @@ export class SaxLane {
       ctx.fillStyle = grad;
       roundRect(ctx, left, yy - barH / 2, width, barH, Math.min(barH / 2, 9));
       ctx.fill();
-      if (this.selected && n.key === this.selected) {
+      if ((this.selected && n.key === this.selected) || this.selectedMore.has(n.key)) {
         ctx.shadowColor = "#fff";
         ctx.shadowBlur = 14;
         ctx.strokeStyle = "#fff";
@@ -241,6 +243,19 @@ export class SaxLane {
         ctx.textBaseline = "alphabetic";
       }
       this.hits.push({ key: n.key, start: n.start, midi: n.midi, x: left, y: yy - barH / 2, w: width, h: barH });
+    }
+
+    // The box being dragged to pick several notes.
+    if (this.band) {
+      const { x0, y0, x1, y1 } = this.band;
+      ctx.save();
+      ctx.fillStyle = "rgba(255, 255, 255, 0.08)";
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 4]);
+      ctx.fillRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+      ctx.strokeRect(Math.min(x0, x1) + 0.5, Math.min(y0, y1) + 0.5, Math.abs(x1 - x0), Math.abs(y1 - y0));
+      ctx.restore();
     }
 
     // The hit line by the horn.

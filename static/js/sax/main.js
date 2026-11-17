@@ -567,7 +567,7 @@ function showStrip(focus, current, shown) {
 // start and its concert pitch as the line made it, so a correction outlives
 // a change of saxophone and is there on the next visit.
 
-const edit = { on: false, sets: {}, undo: [], redo: [], selected: null, drag: null, scrub: null, scrubbedAt: 0, dirty: new Set(), timer: 0 };
+const edit = { on: false, sets: {}, undo: [], redo: [], selected: null, more: new Set(), multi: false, band: null, drag: null, scrub: null, scrubbedAt: 0, dirty: new Set(), timer: 0 };
 // A drag of the lane just ended: its click is not a tap.
 const scrubbed = () => performance.now() - edit.scrubbedAt < 300;
 window.__saxEdit = edit;
@@ -680,12 +680,39 @@ function undo(redo = false) {
   to.push({ set: step.set, edits: edit.sets[step.set] || {} });
   commit(step.set, step.edits);
   if (!state.notes.some((n) => n.key === edit.selected)) select(null);
+  else pruneMore();
 }
 
 const selectedNote = () => (edit.selected ? state.notes.find((n) => n.key === edit.selected) : null);
+/** Every note picked: the one picked last and the others with it. */
+const pickedKeys = () => (edit.selected ? [edit.selected, ...[...edit.more].filter((k) => k !== edit.selected)] : []);
+const pickedNotes = () => {
+  const keys = new Set(pickedKeys());
+  return state.notes.filter((n) => keys.has(n.key));
+};
+function pruneMore() {
+  const there = new Set(state.notes.map((n) => n.key));
+  for (const k of [...edit.more]) if (!there.has(k)) edit.more.delete(k);
+}
 
-/** A note picked: the song stops, and the note sounds. */
-function select(key, { sound = true } = {}) {
+/** A note picked: the song stops, and the note sounds. `add` (Mayús/Ctrl,
+ *  or «Varias»): with the ones already picked, or out of them if it was. */
+function select(key, { sound = true, add = false } = {}) {
+  if (add && key && edit.selected) {
+    if (key === edit.selected) {
+      // Out of the group: another of them is the one picked.
+      const next = [...edit.more][0] || null;
+      edit.more.delete(next);
+      key = next;
+      sound = false;
+    } else if (edit.more.has(key)) {
+      edit.more.delete(key);
+      key = edit.selected;
+      sound = false;
+    } else edit.more.add(edit.selected);
+  } else edit.more.clear();
+  if (key) edit.more.delete(key);
+  lane.selectedMore = edit.more;
   edit.selected = key;
   lane.selected = key;
   if (key) {
@@ -701,32 +728,57 @@ function hear(n = selectedNote()) {
   instrument()?.play(n.midi, ctx.currentTime + 0.01, Math.min(0.6, Math.max(0.25, n.end - n.start)), 90);
 }
 
+/** One note's correction changed by (dm semitones, dt s, dd s longer). */
+function nudge(ed, key, dm, dt, dd) {
+  const e = { ...(ed[key] || {}) };
+  delete e.del;
+  e.dm = (e.dm || 0) + dm;
+  e.dt = Math.round(((e.dt || 0) + dt) * 1000) / 1000;
+  e.dd = Math.round(((e.dd || 0) + dd) * 1000) / 1000;
+  if (!e.dm) delete e.dm;
+  if (!e.dt) delete e.dt;
+  if (!e.dd) delete e.dd;
+  if (Object.keys(e).length) ed[key] = e;
+  else delete ed[key];
+}
+
+/** Every note picked, moved together: one change, one ↶. */
 function moveSelected(dm, dt = 0, dd = 0) {
-  const key = edit.selected;
-  if (!key) return;
+  const keys = pickedKeys();
+  if (!keys.length) return;
   change((ed) => {
-    const e = { ...(ed[key] || {}) };
-    delete e.del;
-    e.dm = (e.dm || 0) + dm;
-    e.dt = Math.round(((e.dt || 0) + dt) * 1000) / 1000;
-    e.dd = Math.round(((e.dd || 0) + dd) * 1000) / 1000;
-    if (!e.dm) delete e.dm;
-    if (!e.dt) delete e.dt;
-    if (!e.dd) delete e.dd;
-    if (Object.keys(e).length) ed[key] = e;
-    else delete ed[key];
+    for (const key of keys) nudge(ed, key, dm, dt, dd);
   });
   hear();
 }
 
-function deleteSelected() {
-  const key = edit.selected;
-  if (!key) return;
-  const n = selectedNote();
-  const after = n ? state.notes[state.notes.indexOf(n) + 1] : null;
+/** «Unir»: the notes picked become one, from the first's start to the
+ *  last's end, at the first's pitch (a held note the tracker cut in pieces). */
+function joinSelected() {
+  const notes = pickedNotes();
+  if (notes.length < 2) return;
+  const first = notes[0];
+  const end = Math.max(...notes.map((n) => n.end));
   change((ed) => {
-    if (key.startsWith("add|")) delete ed[key]; // a note put in by hand: just gone
-    else ed[key] = { del: true };
+    nudge(ed, first.key, 0, 0, Math.round((end - first.end) * 1000) / 1000);
+    for (const n of notes.slice(1)) {
+      if (n.key.startsWith("add|")) delete ed[n.key];
+      else ed[n.key] = { del: true };
+    }
+  });
+  select(first.key);
+}
+
+function deleteSelected() {
+  const keys = pickedKeys();
+  if (!keys.length) return;
+  const n = selectedNote();
+  const after = n && keys.length === 1 ? state.notes[state.notes.indexOf(n) + 1] : null;
+  change((ed) => {
+    for (const key of keys) {
+      if (key.startsWith("add|")) delete ed[key]; // a note put in by hand: just gone
+      else ed[key] = { del: true };
+    }
   });
   // The next note picked: a run of wrong notes goes with one tap each.
   select(after?.key || null, { sound: false });
@@ -762,9 +814,17 @@ function showEdit() {
   $("sx-reset").disabled = !count;
   $("sx-edit-count").textContent = count ? `${count} ${count === 1 ? "cambio" : "cambios"}` : "";
   const shown = (m) => (prefs.view === "concert" ? m : written(m, prefs.sax));
-  $("sx-edit-info").textContent = n
-    ? `${noteName(shown(n.midi), { names: prefs.names })} · ${formatTime(n.start)} · ${(n.end - n.start).toFixed(2).replace(".", ",")} s${n.edited ? " ✎" : ""}`
-    : "Toca una nota";
+  const many = pickedKeys().length;
+  $("sx-join").disabled = many < 2;
+  $("sx-multi").setAttribute("aria-pressed", String(edit.multi));
+  $("sx-edit-info").textContent =
+    many > 1
+      ? `${many} notas elegidas`
+      : n
+        ? `${noteName(shown(n.midi), { names: prefs.names })} · ${formatTime(n.start)} · ${(n.end - n.start).toFixed(2).replace(".", ",")} s${n.edited ? " ✎" : ""}`
+        : edit.multi
+          ? "Toca las notas"
+          : "Toca una nota";
 }
 
 function toggleEdit(on = !edit.on) {
@@ -772,7 +832,10 @@ function toggleEdit(on = !edit.on) {
   $("sx-edit").setAttribute("aria-pressed", String(on));
   $("sx-editbar").hidden = !on;
   document.body.classList.toggle("sx-editing", on);
-  if (!on) select(null);
+  if (!on) {
+    edit.multi = false;
+    select(null);
+  }
   $("sx-lane").style.cursor = "";
   showEdit();
   lane.resize(); // the bar is a row above the staff: the staff is that much lower
@@ -803,12 +866,29 @@ function wireEditing() {
     if (edit.on) {
       const edge = edgeAt(e);
       const hit = edge || hitAt(e);
+      const add = e.shiftKey || e.ctrlKey || e.metaKey || edit.multi;
       if (hit) {
-        select(hit.key);
-        const n = selectedNote();
+        // With Mayús/Ctrl or «Varias»: in or out of the notes picked. A
+        // note of several picked: the group stays, to be dragged together.
+        if (add) return select(hit.key, { add: true });
+        if (!pickedKeys().includes(hit.key)) select(hit.key);
+        else {
+          if (!audio.paused) audio.pause();
+          hear(state.notes.find((x) => x.key === hit.key));
+        }
+        const n = state.notes.find((x) => x.key === hit.key);
         if (!n) return;
         canvas.setPointerCapture?.(e.pointerId);
-        edit.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, axis: edge ? "len" : null, dm: 0, dt: 0, dd: 0, n, base: { midi: n.midi, start: n.start, end: n.end } };
+        const items = pickedNotes().map((x) => ({ n: x, base: { midi: x.midi, start: x.start, end: x.end } }));
+        edit.drag = { id: e.pointerId, x: e.clientX, y: e.clientY, axis: edge ? "len" : null, dm: 0, dt: 0, dd: 0, n, base: { midi: n.midi, start: n.start, end: n.end }, items };
+        return;
+      }
+      if (add) {
+        // A box dragged over the empty staff: the notes in it are picked.
+        const { x, y } = at(e);
+        canvas.setPointerCapture?.(e.pointerId);
+        edit.band = { id: e.pointerId, x0: x, y0: y, x1: x, y1: y };
+        lane.band = edit.band;
         return;
       }
       select(null);
@@ -833,6 +913,12 @@ function wireEditing() {
       seek(Math.max(0, s.t0 - dx / pps()));
       return;
     }
+    if (edit.band && edit.band.id === e.pointerId) {
+      const { x, y } = at(e);
+      edit.band.x1 = x;
+      edit.band.y1 = y;
+      return;
+    }
     const d = edit.drag;
     if (!d || d.id !== e.pointerId) {
       if (edit.on) canvas.style.cursor = edgeAt(e) ? "ew-resize" : hitAt(e) ? "pointer" : "";
@@ -846,17 +932,19 @@ function wireEditing() {
       const dm = Math.max(-24, Math.min(24, Math.round(-dy / semitone)));
       if (dm !== d.dm) {
         d.dm = dm;
-        d.n.midi = d.base.midi + dm;
+        for (const it of d.items) it.n.midi = it.base.midi + dm;
         hear(d.n);
       }
     } else if (d.axis === "x") {
       d.dt = Math.round((dx / pps()) * 100) / 100;
-      d.n.start = d.base.start + d.dt;
-      d.n.end = d.base.end + d.dt;
+      for (const it of d.items) {
+        it.n.start = it.base.start + d.dt;
+        it.n.end = it.base.end + d.dt;
+      }
     } else if (d.axis === "len") {
       const dd = Math.round((dx / pps()) * 100) / 100;
       d.dd = Math.max(MIN_EDIT_SEC - (d.base.end - d.base.start), dd);
-      d.n.end = d.base.end + d.dd;
+      for (const it of d.items) it.n.end = Math.max(it.base.start + MIN_EDIT_SEC, it.base.end + d.dd);
       showEdit();
     }
   });
@@ -871,10 +959,21 @@ function wireEditing() {
       }
       return;
     }
+    const band = edit.band;
+    if (band && band.id === e.pointerId) {
+      edit.band = null;
+      lane.band = null;
+      const [xa, xb] = [Math.min(band.x0, band.x1), Math.max(band.x0, band.x1)];
+      const [ya, yb] = [Math.min(band.y0, band.y1), Math.max(band.y0, band.y1)];
+      const inside = lane.hits.filter((h) => h.x + h.w >= xa && h.x <= xb && h.y + h.h >= ya && h.y <= yb).map((h) => h.key);
+      // Added to the ones picked (a tap on the empty staff with «Varias» on: nothing changes).
+      if (xb - xa > 4 || yb - ya > 4) for (const k of inside) if (!pickedKeys().includes(k)) select(k, { add: true, sound: false });
+      return;
+    }
     const d = edit.drag;
     if (!d || d.id !== e.pointerId) return;
     edit.drag = null;
-    Object.assign(d.n, d.base); // the preview undone: the edit makes it again
+    for (const it of d.items) Object.assign(it.n, it.base); // the preview undone: the edit makes it again
     if (d.dm || d.dt || d.dd) moveSelected(d.dm, d.dt, d.dd);
   };
   canvas.addEventListener("pointerup", end);
@@ -892,6 +991,11 @@ function wireEditing() {
   $("sx-shorter").onclick = () => moveSelected(0, 0, -0.1);
   $("sx-longer").onclick = () => moveSelected(0, 0, 0.1);
   $("sx-add").onclick = () => addNote();
+  $("sx-join").onclick = joinSelected;
+  $("sx-multi").onclick = () => {
+    edit.multi = !edit.multi;
+    showEdit();
+  };
   // A double tap on the empty lane: a note there, at that moment and height.
   canvas.addEventListener("dblclick", (e) => {
     if (!edit.on || hitAt(e)) return;
@@ -925,6 +1029,17 @@ function editKey(e) {
   }
   if (edit.on && !mod && (e.key === "n" || e.key === "N")) {
     addNote();
+    return true;
+  }
+  // Ctrl+A: every note of the line picked.
+  if (edit.on && mod && (e.key === "a" || e.key === "A") && state.notes.length) {
+    select(state.notes[0].key, { sound: false });
+    for (const n of state.notes.slice(1)) edit.more.add(n.key);
+    showEdit();
+    return true;
+  }
+  if (edit.on && !mod && (e.key === "u" || e.key === "U") && pickedKeys().length > 1) {
+    joinSelected();
     return true;
   }
   if (!edit.on || !edit.selected) return false;
