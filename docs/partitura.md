@@ -831,6 +831,8 @@ al original» quita todos los cambios de esa línea (también se deshace). Se gu
 cada nota nombrada por su stem, su inicio y su altura de concierto: sobreviven a cambiar de saxo.
 Al borrar, queda elegida la siguiente: una racha de notas basura sale tecla por tecla. La duración: ⇤ Corta / Larga ⇥ (Alt+← / Alt+→, de a 0,1 s) o arrastrando el borde derecho de la nota; una nota alargada tapa el inicio de la siguiente (y la quita si no queda nada de ella).
 
+**＋ Nota**: agrega una nota donde está la canción, a la altura de la nota elegida o de la más cercana (botón o tecla N), o con doble clic en un lugar vacío del pentagrama (en ese momento y a esa altura). Queda elegida y se mueve, se alarga y se borra como las demás; se guarda como `add|inicio|altura` con su largo (`len`).
+
 **Arrastrar la pista** (como las notas cayendo del piano): con el clic (o el dedo) sobre la pista, la canción se mueve con el puntero; si sonaba, se pausa mientras arrastras y sigue al soltar. En «Editar», arrastrar sobre el espacio vacío hace lo mismo.
 
 **La franja de arriba** muestra la frase que se toca (hasta la próxima respiración; máximo 10 notas, cortada en su pausa más larga), toda de una vez y de un solo color: la que suena en dorado, las ya tocadas atenuadas, cada una un poco más arriba o abajo según la melodía; después de «luego», el inicio de la frase siguiente. Cambia solo al pasar de frase (antes: nueve notas de colores distintos que se corrían en cada nota).
