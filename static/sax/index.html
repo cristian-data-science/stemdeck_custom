@@ -103,6 +103,15 @@
         <button type="button" data-speed="70">70 %</button>
         <button type="button" data-speed="100" aria-pressed="true">100 %</button>
       </span>
+      <span class="sx-group sx-loop" role="group" aria-label="Bucle"
+            title="Bucle: repite una parte para estudiarla. A marca el inicio (el compás que está sonando) y B el final; al pasar B la canción vuelve a A">
+        <span class="sx-loop-label">Bucle</span>
+        <button type="button" id="sx-loop-a" aria-pressed="false" title="A: el bucle empieza en el compás que está sonando">A</button>
+        <button type="button" id="sx-loop-b" aria-pressed="false" title="B: el bucle termina al final del compás que está sonando (B sin A: repite ese compás)">B</button>
+        <button type="button" id="sx-loop-on" aria-pressed="false" title="Activar o desactivar el bucle" disabled>🔁</button>
+        <button type="button" id="sx-loop-clear" title="Quitar el bucle" disabled>✕</button>
+        <span class="sx-loop-info" id="sx-loop-info"></span>
+      </span>
       <label class="sx-field" id="sx-engine-field" hidden
              title="SWAM: un saxo por modelado físico (Audio Modeling SWAM Saxophones, instalado en este PC), con transiciones, respiración y dinámica de verdad; graba la línea en unos segundos. Grabado: notas sueltas de un saxo real (Iowa), al instante">
         Saxo

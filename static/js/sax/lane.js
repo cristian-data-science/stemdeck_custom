@@ -28,6 +28,7 @@ export class SaxLane {
     this.selected = null; // «✏️ Editar»: the key of the note picked
     this.bars = null; // the song's beats and bars (beats.js barGrid), or none
     this.barMarks = []; // [{x, bar}] the bar lines last drawn: tests
+    this.loop = null; // «Bucle»: {a, b} s, or none
     this.you = null; // «🎤 Practicar»: {midi (as shown), state: ok|near|off, trail: [{age s, midi}]}
   }
 
@@ -114,6 +115,26 @@ export class SaxLane {
         ctx.moveTo(x, 0);
         ctx.lineTo(x, h);
         ctx.stroke();
+      }
+    }
+
+    // «Bucle»: the part repeated, lit; its ends marked A and B.
+    if (this.loop) {
+      const xa = Math.max(HIT_X, xOf(this.loop.a));
+      const xb = Math.min(w, xOf(this.loop.b));
+      if (xb > xa) {
+        ctx.fillStyle = "rgba(244, 183, 64, 0.07)";
+        ctx.fillRect(xa, 0, xb - xa, h);
+      }
+      ctx.font = "800 12px Inter, sans-serif";
+      ctx.textBaseline = "top";
+      for (const [sec, label, align] of [[this.loop.a, "A", "left"], [this.loop.b, "B", "right"]]) {
+        const x = xOf(sec);
+        if (x < HIT_X || x > w) continue;
+        ctx.fillStyle = "rgba(244, 183, 64, 0.85)";
+        ctx.fillRect(Math.round(x) - 1, 0, 2, h);
+        ctx.textAlign = align;
+        ctx.fillText(label, x + (align === "left" ? 5 : -5), 22);
       }
     }
 

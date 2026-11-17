@@ -837,6 +837,8 @@ La barra de edición es una fila propia sobre el pentagrama (antes flotaba encim
 
 **El ritmo en el pentagrama**: una línea tenue en cada pulso y una más clara donde empieza cada compás, con su número (de la rejilla de pulsos del estudio, `GET /api/jobs/<id>/beats`; `static/js/sax/beats.js`). Sin rejilla, las marcas de segundos de antes.
 
+**Bucle** (abajo): **A** marca el inicio en el compás que está sonando y **B** el final (B sin A repite ese compás); al pasar B la canción vuelve a A. 🔁 lo apaga sin perderlo y ✕ lo quita. La parte repetida se ve iluminada en el pentagrama, con A y B. Se guarda por canción en el navegador. Sin rejilla de pulsos, A y B son el momento exacto.
+
 **Arrastrar la pista** (como las notas cayendo del piano): con el clic (o el dedo) sobre la pista, la canción se mueve con el puntero; si sonaba, se pausa mientras arrastras y sigue al soltar. En «Editar», arrastrar sobre el espacio vacío hace lo mismo.
 
 **La franja de arriba** muestra la frase que se toca (hasta la próxima respiración; máximo 10 notas, cortada en su pausa más larga), toda de una vez y de un solo color: la que suena en dorado, las ya tocadas atenuadas, cada una un poco más arriba o abajo según la melodía; después de «luego», el inicio de la frase siguiente. Cambia solo al pasar de frase (antes: nueve notas de colores distintos que se corrían en cada nota).

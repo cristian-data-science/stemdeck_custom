@@ -167,3 +167,8 @@ body.sx-horn-chart .sx-horn { width: clamp(220px, 25vw, 340px); }
 .sx-swam-state.busy { color: #8fd3ff; }
 .sx-swam-state.error { color: #e5484d; }
 .sx-editbar .sx-edit-add { border-color: #f4b740; color: #ffd98a; font-weight: 700; }
+
+/* «Bucle»: a part of the song repeated. */
+.sx-loop-label { color: #9aa3b5; font-size: 13px; margin-right: 2px; }
+.sx-loop button:disabled { opacity: 0.35; cursor: default; }
+.sx-loop-info { color: #f4b740; font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; }

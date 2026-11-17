@@ -12,7 +12,7 @@ import { SmoothClock } from "../score/model.js";
 import { buildChart } from "./chart.js";
 import { buildHorn } from "./horn.js";
 import { HIT_X, SaxLane } from "./lane.js";
-import { barGrid } from "./beats.js";
+import { barGrid, barSpanAt, beatIndexAt } from "./beats.js";
 import { SAXES, around, breaths, fingering, concertRange, fitRange, melodyFrom, noteGroups, noteName, phrase, phrasingOf, pitchColor, skyline, slur, staffStep, written } from "./melody.js";
 import { MicPitch, judge } from "./mic.js";
 import { SaxSampler, SaxSynth } from "./synth.js";
@@ -1214,13 +1214,83 @@ function listen(t, now) {
   }
 }
 
+// ── «Bucle» ─────────────────────────────────────────────────────────────
+//
+// A part of the song repeated to study it: A at the start of the bar that
+// is sounding, B at its end (or of a later bar); past B the song goes back
+// to A. Without a beat grid, A and B are the moment itself. Kept per song.
+
+const loop = { a: null, b: null, on: false };
+window.__saxLoop = loop;
+const LOOP_LS = `stemdeck.sax.loop.${JOB}`;
+
+function readLoop() {
+  try {
+    const l = JSON.parse(localStorage.getItem(LOOP_LS) || "null");
+    if (l && l.b > l.a) Object.assign(loop, { a: l.a, b: l.b, on: !!l.on });
+  } catch {
+    /* none kept */
+  }
+}
+
+function showLoop() {
+  const set = loop.a != null && loop.b != null;
+  if (set) localStorage.setItem(LOOP_LS, JSON.stringify(loop));
+  else localStorage.removeItem(LOOP_LS);
+  lane.loop = set && loop.on ? { a: loop.a, b: loop.b } : null;
+  $("sx-loop-a").setAttribute("aria-pressed", String(loop.a != null));
+  $("sx-loop-b").setAttribute("aria-pressed", String(loop.b != null));
+  $("sx-loop-on").setAttribute("aria-pressed", String(set && loop.on));
+  $("sx-loop-on").disabled = !set;
+  $("sx-loop-clear").disabled = loop.a == null && loop.b == null;
+  const g = state.bars;
+  const barOf = (t) => (g ? g.bar[Math.max(0, beatIndexAt(g.times, t + 0.01))] : 0);
+  $("sx-loop-info").textContent = !set
+    ? loop.a != null
+      ? `desde ${formatTime(loop.a)}…`
+      : ""
+    : g && barOf(loop.a) > 0
+      ? barOf(loop.a) === barOf(loop.b - 0.05)
+        ? `compás ${barOf(loop.a)}`
+        : `compases ${barOf(loop.a)}–${barOf(loop.b - 0.05)}`
+      : `${formatTime(loop.a)}–${formatTime(loop.b)}`;
+}
+
+/** «A» / «B»: the loop's start or end, at the bar that is sounding. */
+function setLoopPoint(which) {
+  const t = state.t ?? audio.currentTime ?? 0;
+  const span = barSpanAt(state.bars, t, audio.duration || Infinity) || [t, t];
+  if (which === "a") {
+    loop.a = span[0];
+    if (loop.b != null && loop.b <= loop.a) loop.b = null;
+  } else {
+    loop.b = Math.max(span[1], t);
+    // B alone: that bar, repeated.
+    if (loop.a == null || loop.a >= loop.b) loop.a = Math.min(span[0], loop.b - 0.2);
+  }
+  loop.on = loop.a != null && loop.b != null;
+  showLoop();
+}
+
+function clearLoop() {
+  Object.assign(loop, { a: null, b: null, on: false });
+  showLoop();
+}
+
 function frame() {
   const now = performance.now();
   // What the audio says, not what the page last thought: never runs on alone.
   const playing = !audio.paused && !audio.ended;
   if (state.playing && !playing) stopSound();
   state.playing = playing;
-  const t = clock.update(audio.currentTime || 0, now, playing && audio.readyState >= 3, audio.playbackRate || 1);
+  let t = clock.update(audio.currentTime || 0, now, playing && audio.readyState >= 3, audio.playbackRate || 1);
+  // «Bucle»: past B, back to A.
+  if (playing && loop.on && loop.b > loop.a && t >= loop.b) {
+    stopSound();
+    seek(loop.a);
+    swam.resyncAt = 0; // SWAM's audio goes back with it at once
+    t = clock.update(loop.a, now, false, audio.playbackRate || 1);
+  }
   state.t = t;
   schedule(t);
   listen(t, now);
@@ -1245,6 +1315,15 @@ function wire() {
     rebuild();
     loadSamples();
   };
+  $("sx-loop-a").onclick = () => setLoopPoint("a");
+  $("sx-loop-b").onclick = () => setLoopPoint("b");
+  $("sx-loop-on").onclick = () => {
+    loop.on = !loop.on;
+    showLoop();
+  };
+  $("sx-loop-clear").onclick = clearLoop;
+  readLoop();
+  showLoop();
   $("sx-mic").onclick = toggleMic;
   $("sx-wait").onclick = () => {
     practice.wait = !practice.wait;
@@ -1397,6 +1476,7 @@ async function start() {
     // The song's beats and bars (the studio's beat grid), when it has them.
     state.bars = barGrid(await api(`/api/jobs/${JOB}/beats`).catch(() => null));
     lane.bars = state.bars; // drawn on the staff: beats, bars and their numbers
+    showLoop(); // a loop kept from before, named by its bars
   } catch (e) {
     status(`No se encontró la canción: ${e.message}`);
     return;

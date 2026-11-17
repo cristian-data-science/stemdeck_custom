@@ -1633,6 +1633,49 @@ test("🎷 Saxo: changing what plays under it while it plays goes on playing (it
   await expect.poll(() => page.evaluate(() => document.querySelector("#sx-audio").paused)).toBe(false);
 });
 
+test("🎷 Saxo Bucle: A and B at the bars sounding, past B back to A, kept for the next visit, cleared", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const JOB = "5c0de0000001";
+  await page.goto(`/sax/?job=${JOB}&stems=piano`);
+  await page.evaluate(() => localStorage.removeItem("stemdeck.sax.loop.5c0de0000001"));
+  await page.reload();
+  await page.waitForFunction(() => window.__sax?.notes?.length > 5 && window.__sax.bars && document.querySelector("#sx-audio").readyState >= 1);
+  const at = (t) => page.evaluate((x) => { document.querySelector("#sx-audio").currentTime = x; return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); }, t);
+  await expect(page.locator("#sx-loop-on")).toBeDisabled();
+  // The fixture: 90 BPM in 4 from 1 s: bar 2 is 3.667-6.333, bar 3 is 6.333-9.
+  await at(4.0);
+  await page.locator("#sx-loop-a").click();
+  await expect(page.locator("#sx-loop-info")).toContainText("desde 0:03");
+  await at(7.0);
+  await page.locator("#sx-loop-b").click();
+  const loop = await page.evaluate(() => ({ ...window.__saxLoop }));
+  expect(loop.a).toBeCloseTo(3.6667, 2);
+  expect(loop.b).toBeCloseTo(9.0, 2);
+  expect(loop.on).toBe(true);
+  await expect(page.locator("#sx-loop-info")).toHaveText("compases 2–3");
+  await expect(page.locator("#sx-loop-on")).toHaveAttribute("aria-pressed", "true");
+  expect(await page.evaluate(() => window.__saxLane.loop)).toEqual({ a: loop.a, b: loop.b });
+  // Playing past B: back to A.
+  await at(8.7);
+  await page.locator("#sx-play").click();
+  await expect.poll(() => page.evaluate(() => document.querySelector("#sx-audio").currentTime), { timeout: 8000 }).toBeLessThan(6);
+  expect(await page.evaluate(() => document.querySelector("#sx-audio").currentTime)).toBeGreaterThanOrEqual(3.6);
+  await page.locator("#sx-play").click();
+  // Kept for the next visit; 🔁 turns it off without losing it; ✕ takes it away.
+  await page.reload();
+  await page.waitForFunction(() => window.__sax?.notes?.length > 5 && window.__sax.bars);
+  await expect(page.locator("#sx-loop-info")).toHaveText("compases 2–3");
+  await page.locator("#sx-loop-on").click();
+  expect(await page.evaluate(() => window.__saxLane.loop)).toBe(null);
+  await expect(page.locator("#sx-loop-info")).toHaveText("compases 2–3");
+  await page.locator("#sx-loop-clear").click();
+  await expect(page.locator("#sx-loop-info")).toHaveText("");
+  await expect(page.locator("#sx-loop-on")).toBeDisabled();
+  expect(await page.evaluate(() => localStorage.getItem("stemdeck.sax.loop.5c0de0000001"))).toBe(null);
+  expect(errors).toEqual([]);
+});
+
 test("🎷 Saxo ✏️ Editar ＋ Nota: a note put in (button, double tap), moved, stretched, kept, taken out", async ({ page }) => {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
