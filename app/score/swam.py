@@ -40,9 +40,6 @@ NAMES = {"alto": "Alto", "tenor": "Tenor", "soprano": "Soprano", "baritone": "Ba
 # swam_render.py's docstring): sent 12 higher to sound where the line is.
 OCTAVE = {"tenor": 12, "baritone": 12}
 KEEP = 12  # renders kept per song (the newest; ~18 MB each for 4 min)
-# Renders named the first way (a hash of the page's request, version 3) are
-# taken over under their new name when asked for again, not made again.
-LEGACY_VERSION = 3
 
 
 def python_exe() -> Path | None:
@@ -87,6 +84,19 @@ def available() -> dict:
     return {"available": bool(exe and found), "saxes": sorted(found), "python": bool(exe)}
 
 
+# SWAM humanises on its own: a random change of dynamics from note to note
+# ("Random Dynamic", 9 by default; 3 is its least) and a pitch that moves
+# with the dynamics ("Dynamic Pitch", 30). The line already has the player's
+# own dynamics and pitch, and on top of them these made the same note sound
+# different each time: off (measured: docs/partitura.md).
+STEADY = {"Random Dynamic": 0.0, "Dynamic Pitch": 0.0}
+
+
+def plugin_params(payload: dict) -> dict[str, float]:
+    """SWAM's settings for this render: its parameter's name -> 0..1."""
+    return dict(STEADY)
+
+
 def _performance(payload: dict) -> dict:
     """What decides the sound: the events SWAM gets, which saxophone, for how
     long, and SWAM's own vibrato or not (swam_render.render)."""
@@ -103,6 +113,7 @@ def _performance(payload: dict) -> dict:
         "sax": sax,
         "duration": payload["duration"],
         "expressive": any(n.get("curve") for n in payload["notes"]),
+        "params": plugin_params(payload),
         "events": swam_render.events(data),
     }
 
@@ -110,27 +121,6 @@ def _performance(payload: dict) -> dict:
 def render_key(payload: dict) -> str:
     blob = json.dumps(_performance(payload), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode()).hexdigest()[:20]
-
-
-def legacy_key(payload: dict) -> str:
-    blob = json.dumps({"v": LEGACY_VERSION, **payload}, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(blob.encode()).hexdigest()[:20]
-
-
-def adopt_legacy(folder: Path, key: str, payload: dict) -> bool:
-    """A render of this line made under its first name: renamed, kept."""
-    dest = audio_path(folder, key)
-    if dest.is_file():
-        return True
-    old = audio_path(folder, legacy_key(payload))
-    if not old.is_file():
-        return False
-    try:
-        old.replace(dest)
-    except OSError:
-        return False
-    logger.info("swam: %s taken over as %s", old.name, dest.name)
-    return True
 
 
 def audio_path(folder: Path, key: str) -> Path:
@@ -161,7 +151,7 @@ def request(key: str, folder: Path, payload: dict, job: str) -> dict:
     changed again since)."""
     global _RUNNING
     dest = audio_path(folder, key)
-    if dest.is_file() or adopt_legacy(folder, key, payload):
+    if dest.is_file():
         dest.touch(exist_ok=True)  # used again: the newest, the last one pruned
         return {"state": "done"}
     with _LOCK:
@@ -214,6 +204,7 @@ def _render(key: str, dest: Path, payload: dict) -> None:
         "cents": payload.get("cents", 0),
         "octave": OCTAVE.get(sax, 0),
         "notes": payload["notes"],
+        "params": plugin_params(payload),
     }
     dest.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:

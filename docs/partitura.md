@@ -869,8 +869,12 @@ en un proceso aparte: si el plugin se cae no se lleva el servidor. Grabaciones e
 `score/audio/swam-<clave>.flac` (las 12 más nuevas por canción; «Limpiar caché» las borra). La
 clave es un hash de lo que SWAM toca (los eventos MIDI de `swam_render.events()`, el saxo, el
 largo), no de lo que manda la página: al cerrar y abrir la app, o con cualquier cambio que no cambie
-cómo suena, se usa la grabación ya hecha. Las grabaciones con la clave anterior (un hash de lo que
-mandaba la página) se renombran a la nueva cuando se piden, sin grabarse de nuevo.
+cómo suena, se usa la grabación ya hecha.
+Los ajustes del plugin (`swam.plugin_params`) son parte de la clave. El azar propio de SWAM va
+apagado: «Random Dynamic» (9 → 3, su mínimo) y «Dynamic Pitch» (30 → 0), que sobre la dinámica y
+la altura del intérprete hacían sonar distinta la misma nota. Medido en los 2 primeros minutos de
+Careless Whisper, misma nota repetida (desviación estándar): aire 1,51 → 1,23 dB, brillo 12,5 →
+11,8 %. Dos grabaciones de la misma línea son idénticas muestra a muestra.
 Variables: `STEMDECK_SWAM_DIR`, `STEMDECK_SWAM_PYTHON`, `STEMDECK_SWAM_OFF=1`.
 
 **Las notas de la voz** (sin RMVPE) no salen solo del modelo de transcripción (Basic Pitch, hecho para

@@ -9,7 +9,8 @@ the plugin; a plugin that crashes takes this process down, not the server):
 in.json: {"plugin": path to the SWAM .dll/.vst3, "duration": s, "cents": the
 song's tuning, "notes": [{"start", "end", "midi" (concert), "velocity",
 "legato", "curve": {"step", "midi": [...], "level": [...]} | absent}],
-"octave": semitones added to every note (12 for SWAM's tenor and baritone)}.
+"octave": semitones added to every note (12 for SWAM's tenor and baritone),
+"params": {a SWAM parameter's name: its value 0..1} set before rendering}.
 Prints progress lines ("progress 0.42") and writes a 44.1 kHz FLAC.
 
 How a line becomes a performance:
@@ -195,6 +196,10 @@ def render(data: dict, out: Path) -> None:
     setp("Pitch Bend Down", 1 / 24)
     expressive = any(n.get("curve") for n in data["notes"])
     setp("Vibrato Depth", 0.0 if expressive else 0.25)  # the singer's own vibrato, or SWAM's
+    # The plugin's settings for this render (app/score/swam.py plugin_params:
+    # its name in SWAM -> its value, 0..1).
+    for name, value in (data.get("params") or {}).items():
+        setp(name, float(value))
     duration = float(data["duration"])
     with tempfile.TemporaryDirectory() as tmp:
         mid = Path(tmp) / "line.mid"

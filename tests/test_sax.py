@@ -466,8 +466,7 @@ def test_swam_breath_never_stops_inside_the_next_note():
 def test_a_swam_render_is_named_by_what_it_plays():
     """Asked again for what plays the same, the render already made is used
     (closing and opening the app must not render a song again); what plays
-    differently is another render; a render named the first way is taken
-    over, not made again."""
+    differently is another render."""
     from app.score import swam
 
     def body():
@@ -486,7 +485,6 @@ def test_a_swam_render_is_named_by_what_it_plays():
     same = body()
     same["notes"][0]["curve"]["level"][10] = 0.81  # the note's breath is its median: unchanged
     assert swam.render_key(same) == base
-    assert swam.legacy_key(same) != swam.legacy_key(body())  # the first naming took it for another
     other = body()
     other["notes"][1]["midi"] = 68
     assert swam.render_key(other) != base
@@ -495,15 +493,18 @@ def test_a_swam_render_is_named_by_what_it_plays():
     assert swam.render_key(tenor) != base
 
 
-def test_a_render_named_the_first_way_is_taken_over(tmp_path):
+def test_swam_is_set_steady_and_a_render_already_there_is_used(tmp_path):
+    """SWAM's own random dynamics and dynamic pitch are off (the line has the
+    player's), the settings are part of what names a render, and a render
+    already made is the answer (and counts as used: the last one pruned)."""
     from app.score import swam
 
     payload = {"sax": "alto", "duration": 4.0, "cents": 0.0,
                "notes": [{"start": 1.0, "end": 2.0, "midi": 69, "velocity": 80, "legato": False, "curve": None}]}
-    old = swam.audio_path(tmp_path, swam.legacy_key(payload))
-    old.write_bytes(b"fLaC")
+    params = swam.plugin_params(payload)
+    assert params["Random Dynamic"] == 0.0 and params["Dynamic Pitch"] == 0.0
+    assert swam._performance(payload)["params"] == params
     key = swam.render_key(payload)
+    swam.audio_path(tmp_path, key).write_bytes(b"fLaC")
     assert swam.request(key, tmp_path, payload, "abcdefabcd12") == {"state": "done"}
-    assert swam.audio_path(tmp_path, key).read_bytes() == b"fLaC"
-    assert not old.exists()
     assert swam.status(key, tmp_path) == {"state": "done"}
