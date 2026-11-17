@@ -352,6 +352,9 @@ class SwamBody(BaseModel):
     notes: list[SwamNote] = Field(max_length=8000)
     room: str = Field(default="medium", pattern=r"^(dry|medium|large)$")  # «Sala»
     tone: str = Field(default="clean", pattern=r"^(clean|soft|growl)$")  # «Tono»
+    # The practice speed (0.25, 0.5, 0.7): the line played that slow by SWAM
+    # itself, not a render stretched by the browser.
+    speed: float = Field(default=1.0, ge=0.2, le=1.0)
     # The stem the line is of: the render is made as loud as it is in the song.
     stem: str | None = Field(default=None, pattern=r"^[a-z_]{2,20}$")
 

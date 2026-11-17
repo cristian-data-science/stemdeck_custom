@@ -890,6 +890,13 @@ la potencia del stem mientras suenan las notas; `swam_render.gain`), no a un pic
 sobre un pico de 0,97. Los controles 🎷 y 🎶 parten en 80 % y 70 %: con ellos ahí, el balance es el
 de la canción. Careless Whisper: «Otros» suena a −18,5 dB; antes el saxo salía a −14,1 dB (4,4 dB
 más fuerte que el original), ahora a −18,5 dB.
+**Velocidad de práctica**: al 25, 50 o 70 % SWAM toca la línea a esa velocidad él mismo
+(`swam._at_speed`: las notas y sus curvas más largas), en vez de que el navegador estire la
+grabación: el ataque de cada nota, la entrada del aire (60 ms) y las transiciones duran lo suyo.
+Es otra grabación por velocidad (la del 50 % dura y pesa el doble); mientras se hace suena la que
+hay, estirada («⟳ grabando al 50 %…»). Medido con Careless Whisper: lista en 28 s, el saxo a
+velocidad 1 con la canción a 0,5, desfase máximo 48 ms; de vuelta al 100 %, la grabación ya hecha
+en 0,7 s.
 Variables: `STEMDECK_SWAM_DIR`, `STEMDECK_SWAM_PYTHON`, `STEMDECK_SWAM_OFF=1`.
 
 **Las notas de la voz** (sin RMVPE) no salen solo del modelo de transcripción (Basic Pitch, hecho para

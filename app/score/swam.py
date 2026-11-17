@@ -178,23 +178,45 @@ def stem_level_db(wav: Path, notes: list[dict]) -> float | None:
     return round((10 * math.log10(float(power[on].mean())) + BALANCE_DB) * 2) / 2
 
 
+def _at_speed(payload: dict) -> tuple[list[dict], float]:
+    """The line and its length as SWAM plays them at the practice speed: the
+    notes that much longer and later (and their curves' steps), so the
+    saxophonist really plays slowly -- a note's attack, its breath's swell
+    and SWAM's transitions keep their own time instead of being stretched."""
+    speed = float(payload.get("speed") or 1.0)
+    if speed >= 0.999:
+        return payload["notes"], payload["duration"]
+    notes = []
+    for n in payload["notes"]:
+        m = {
+            **n,
+            "start": round(float(n["start"]) / speed, 3),
+            "end": round(float(n["end"]) / speed, 3),
+        }
+        if n.get("curve"):
+            m["curve"] = {**n["curve"], "step": float(n["curve"]["step"]) / speed}
+        notes.append(m)
+    return notes, round(float(payload["duration"]) / speed, 1)
+
+
 def _performance(payload: dict) -> dict:
     """What decides the sound: the events SWAM gets, which saxophone, for how
     long, and SWAM's own vibrato or not (swam_render.render)."""
     from app.score import swam_render
 
     sax = payload.get("sax", "alto")
+    notes, duration = _at_speed(payload)
     data = {
         "cents": payload.get("cents", 0),
         "octave": OCTAVE.get(sax, 0),
-        "notes": payload["notes"],
+        "notes": notes,
         "blow": _tone(payload)["blow"],
     }
     return {
         "v": VERSION,
         "sax": sax,
-        "duration": payload["duration"],
-        "expressive": any(n.get("curve") for n in payload["notes"]),
+        "duration": duration,
+        "expressive": any(n.get("curve") for n in notes),
         "params": plugin_params(payload),
         "level_db": payload.get("level_db"),
         "events": swam_render.events(data),
@@ -281,12 +303,13 @@ def _render(key: str, dest: Path, payload: dict) -> None:
     sax = payload.get("sax", "alto")
     if not exe or sax not in found:
         raise RuntimeError("SWAM Saxophones not found")
+    notes, duration = _at_speed(payload)
     data = {
         "plugin": str(found[sax]),
-        "duration": payload["duration"],
+        "duration": duration,
         "cents": payload.get("cents", 0),
         "octave": OCTAVE.get(sax, 0),
-        "notes": payload["notes"],
+        "notes": notes,
         "blow": _tone(payload)["blow"],
         "params": plugin_params(payload),
         "level_db": payload.get("level_db"),
@@ -307,7 +330,7 @@ def _render(key: str, dest: Path, payload: dict) -> None:
         with _LOCK:
             _PROC[key] = proc
         try:
-            out, err = proc.communicate(timeout=max(120, payload["duration"] * 2))
+            out, err = proc.communicate(timeout=max(120, duration * 2))
         except subprocess.TimeoutExpired:
             proc.kill()
             raise RuntimeError("SWAM took too long") from None
@@ -316,7 +339,7 @@ def _render(key: str, dest: Path, payload: dict) -> None:
                 _PROC.pop(key, None)
     if proc.returncode != 0 or not dest.is_file():
         raise RuntimeError((err or out or f"exit {proc.returncode}").strip().splitlines()[-1][:300])
-    logger.info("swam: %s rendered (%s, %d notes)", dest.name, sax, len(payload["notes"]))
+    logger.info("swam: %s rendered (%s, %d notes)", dest.name, sax, len(notes))
 
 
 def _prune(folder: Path, keep: Path) -> None:

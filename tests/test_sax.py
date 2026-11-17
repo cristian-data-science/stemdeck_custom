@@ -579,3 +579,34 @@ def test_swam_is_made_as_loud_as_the_part_is_in_the_song(tmp_path):
     # The level is part of what names a render.
     payload = {"sax": "alto", "duration": 5.0, "notes": [{**notes[0], "velocity": 80, "legato": False, "curve": None}]}
     assert swam.render_key({**payload, "level_db": level}) != swam.render_key(payload)
+
+
+def test_swam_plays_the_practice_speed_itself():
+    """At 50 % the line is given to SWAM twice as long (notes, curves, the
+    whole), so it plays slowly instead of a render being stretched: a
+    note's swell in keeps its own 60 ms. Another speed is another render."""
+    from app.api.sax import SwamBody
+    from app.score import swam
+    from app.score import swam_render as R
+
+    notes = [
+        {"start": 1.0, "end": 2.0, "midi": 69, "curve": {"step": 0.02, "midi": [69.0] * 50, "level": [0.8] * 50}},
+        {"start": 3.0, "end": 3.5, "midi": 71},
+    ]
+    full = SwamBody(sax="alto", duration=6, notes=notes).model_dump()
+    half = SwamBody(sax="alto", duration=6, notes=notes, speed=0.5).model_dump()
+    assert swam._at_speed(full) == (full["notes"], 6)
+    slow, duration = swam._at_speed(half)
+    assert duration == 12
+    assert [(n["start"], n["end"]) for n in slow] == [(2.0, 4.0), (6.0, 7.0)]
+    assert slow[0]["curve"]["step"] == pytest.approx(0.04)
+    assert swam.render_key(half) != swam.render_key(full)
+    ev = R.events({"notes": slow})
+    ons = [t for t, b in ev if b[0] == 0x90]
+    assert ons == [2.0, 6.0]
+    # The swell in: full by 60 ms after the note starts, as at full speed.
+    cc = [(t, b[2]) for t, b in ev if b[0] == 0xB0 and 6.0 <= t < 7.0]
+    top = max(v for _, v in cc)
+    assert next(t for t, v in cc if v >= top - 1) - 6.0 <= 0.08
+    with pytest.raises(ValueError):
+        SwamBody(sax="alto", duration=6, notes=notes, speed=0.1)

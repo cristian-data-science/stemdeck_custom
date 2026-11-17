@@ -455,6 +455,7 @@ function setSpeed(pct) {
   audio.preservesPitch = true;
   audio.playbackRate = prefs.speed / 100;
   stopSound();
+  swamSoon(); // SWAM plays the line at this speed itself (another render)
   for (const b of document.querySelectorAll("[data-speed]")) b.setAttribute("aria-pressed", String(Number(b.dataset.speed) === prefs.speed));
 }
 
@@ -955,6 +956,11 @@ const swamBase = () => `${lineSet()}|${prefs.sax}|${prefs.expression}`;
 /** The SWAM render is what sounds (not the recorded saxophone). */
 const swamActive = () => swamWanted() && !!swam.loadedKey && swam.loadedBase === swamBase() && swamAudio.readyState >= 1;
 
+/** The speed a render is asked at: the practice speed (25, 50, 70 %: SWAM
+ *  plays the line that slow itself, its attacks and transitions in their
+ *  own time), or 1. Meanwhile the render there is plays, stretched. */
+const swamSpeed = () => (prefs.speed < 100 ? prefs.speed / 100 : 1);
+
 function swamPayload() {
   const exact = prefs.expression === "exact";
   const last = state.notes.length ? state.notes[state.notes.length - 1].end : 0;
@@ -966,6 +972,7 @@ function swamPayload() {
     room: ["dry", "large"].includes(prefs.room) ? prefs.room : "medium",
     tone: ["soft", "growl"].includes(prefs.tone) ? prefs.tone : "clean",
     stem: state.stems[0], // as loud as this part is in the song
+    speed: swamSpeed(), // SWAM itself plays at the practice speed
     notes: state.notes.map((n) => {
       const out = { start: r2(n.start), end: r2(n.end), midi: n.midi, velocity: Math.max(1, Math.min(127, Math.round(n.velocity ?? 80))), legato: !!n.legato };
       const c = exact ? null : curveOf(n, 1);
@@ -991,6 +998,8 @@ function swamSoon() {
 
 async function swamRequest() {
   const base = swamBase();
+  const speed = swamSpeed();
+  swam.speed = speed;
   try {
     const r = await api(`/api/jobs/${JOB}/sax/swam`, {
       method: "POST",
@@ -1000,8 +1009,8 @@ async function swamRequest() {
     swam.key = r.key;
     swam.base = base;
     swam.state = r.state;
-    if (r.state === "done") swamLoad(r.url, r.key, base);
-    else swamPoll(r.key, base);
+    if (r.state === "done") swamLoad(r.url, r.key, base, speed);
+    else swamPoll(r.key, base, speed);
   } catch (e) {
     swam.state = "error";
     swam.error = e.message;
@@ -1009,24 +1018,24 @@ async function swamRequest() {
   showSwam();
 }
 
-function swamPoll(key, base) {
+function swamPoll(key, base, speed) {
   clearTimeout(swam.poll);
   swam.poll = setTimeout(async () => {
     if (key !== swam.key) return; // a newer line asked for since
     try {
       const r = await api(`/api/jobs/${JOB}/sax/swam/${key}`);
       swam.state = r.state;
-      if (r.state === "done") swamLoad(r.url, key, base);
+      if (r.state === "done") swamLoad(r.url, key, base, speed);
       else if (r.state === "error") swam.error = r.error;
-      else swamPoll(key, base);
+      else swamPoll(key, base, speed);
     } catch {
-      swamPoll(key, base);
+      swamPoll(key, base, speed);
     }
     showSwam();
   }, 1500);
 }
 
-function swamLoad(url, key, base) {
+function swamLoad(url, key, base, speed = 1) {
   if (key !== swam.key) return;
   swamAudio.src = url;
   swamAudio.addEventListener(
@@ -1034,6 +1043,7 @@ function swamLoad(url, key, base) {
     () => {
       swam.loadedKey = key;
       swam.loadedBase = base;
+      swam.loadedSpeed = speed;
       swam.resyncAt = 0;
       stopSound(); // the recorded saxophone stops: SWAM takes over from here
       showSwam();
@@ -1050,21 +1060,27 @@ function syncSwam() {
     return;
   }
   swamAudio.volume = prefs.volSax / 100;
-  if (swamAudio.playbackRate !== audio.playbackRate) swamAudio.playbackRate = audio.playbackRate;
+  // The render was made at `made` of the song's speed (1, or the practice
+  // speed it was asked at): the song's second t is its second t / made, and
+  // it runs at the song's rate / made (1 when it was made for this speed).
+  const made = swam.loadedSpeed || 1;
+  const rate = audio.playbackRate / made;
+  if (Math.abs(swamAudio.playbackRate - rate) > 1e-3) swamAudio.playbackRate = rate;
+  const at = audio.currentTime / made;
   const playing = !audio.paused && !audio.ended;
-  const drift = Math.abs(swamAudio.currentTime - audio.currentTime);
+  const drift = Math.abs(swamAudio.currentTime - at) * made; // in the song's seconds
   const now = performance.now();
   if (playing) {
-    if (drift > 0.06 && now - swam.resyncAt > 400 && audio.currentTime < (swamAudio.duration || Infinity)) {
+    if (drift > 0.06 && now - swam.resyncAt > 400 && at < (swamAudio.duration || Infinity)) {
       swam.resyncAt = now;
-      swamAudio.currentTime = audio.currentTime;
+      swamAudio.currentTime = at;
     }
-    if (swamAudio.paused && audio.currentTime < (swamAudio.duration || Infinity)) swamAudio.play().catch(() => {});
+    if (swamAudio.paused && at < (swamAudio.duration || Infinity)) swamAudio.play().catch(() => {});
   } else {
     if (!swamAudio.paused) swamAudio.pause();
     if (drift > 0.03 && now - swam.resyncAt > 150) {
       swam.resyncAt = now;
-      swamAudio.currentTime = Math.min(audio.currentTime, swamAudio.duration || audio.currentTime);
+      swamAudio.currentTime = Math.min(at, swamAudio.duration || at);
     }
   }
 }
@@ -1087,7 +1103,9 @@ function showSwam() {
         : asking
           ? "⟳ SWAM: cargando la grabación…"
           : swamActive()
-            ? "🎷 SWAM · ⟳ grabando tus cambios…"
+            ? (swam.speed || 1) !== (swam.loadedSpeed || 1)
+              ? `🎷 SWAM · ⟳ grabando al ${Math.round((swam.speed || 1) * 100)} %…`
+              : "🎷 SWAM · ⟳ grabando tus cambios…"
             : "⟳ SWAM grabando la línea… (mientras, el saxo grabado)";
 }
 
