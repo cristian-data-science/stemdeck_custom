@@ -508,3 +508,22 @@ def test_swam_is_set_steady_and_a_render_already_there_is_used(tmp_path):
     swam.audio_path(tmp_path, key).write_bytes(b"fLaC")
     assert swam.request(key, tmp_path, payload, "abcdefabcd12") == {"state": "done"}
     assert swam.status(key, tmp_path) == {"state": "done"}
+
+
+def test_swam_room_is_part_of_the_render():
+    """«Sala»: SWAM's room model (size, walls, distance). The medium room is
+    the plugin as it comes; another room is another render."""
+    from app.api.sax import SwamBody
+    from app.score import swam
+
+    notes = [{"start": 1.0, "end": 2.0, "midi": 69}]
+    medium = SwamBody(sax="alto", duration=4, notes=notes).model_dump()
+    assert medium["room"] == "medium"
+    assert swam.plugin_params(medium) == swam.STEADY
+    dry = SwamBody(sax="alto", duration=4, notes=notes, room="dry").model_dump()
+    large = SwamBody(sax="alto", duration=4, notes=notes, room="large").model_dump()
+    assert swam.plugin_params(dry)["Source Distance"] == 0.0
+    assert swam.plugin_params(large)["Room Sizes"] > swam.plugin_params(dry)["Room Sizes"]
+    assert len({swam.render_key(p) for p in (medium, dry, large)}) == 3
+    with pytest.raises(ValueError):
+        SwamBody(sax="alto", duration=4, notes=notes, room="cathedral")

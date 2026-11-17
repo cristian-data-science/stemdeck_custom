@@ -963,6 +963,7 @@ function swamPayload() {
     sax: prefs.sax,
     duration: Math.round((last + 3) * 10) / 10,
     cents: Math.round((state.cents || 0) * 10) / 10,
+    room: ["dry", "large"].includes(prefs.room) ? prefs.room : "medium",
     notes: state.notes.map((n) => {
       const out = { start: r2(n.start), end: r2(n.end), midi: n.midi, velocity: Math.max(1, Math.min(127, Math.round(n.velocity ?? 80))), legato: !!n.legato };
       const c = exact ? null : curveOf(n, 1);
@@ -1071,6 +1072,7 @@ function showSwam() {
   const wanted = swamWanted();
   el.hidden = !wanted;
   $("sx-sound-state").hidden = wanted && swamActive();
+  for (const f of document.querySelectorAll(".sx-swam-only")) f.hidden = !wanted;
   if (!wanted) return;
   const fresh = swam.loadedKey && swam.loadedKey === swam.key;
   const asking = swam.state === "asking" || (swam.state === "done" && !fresh);
@@ -1241,6 +1243,13 @@ function wire() {
     prefs.expression = $("sx-expression").value;
     savePrefs();
     stopSound();
+    swamSoon();
+  };
+  // «Sala»: SWAM's room (another render; the one before plays meanwhile).
+  $("sx-room").value = ["dry", "large"].includes(prefs.room) ? prefs.room : "medium";
+  $("sx-room").onchange = () => {
+    prefs.room = $("sx-room").value;
+    savePrefs();
     swamSoon();
   };
   $("sx-engine").value = prefs.engine === "iowa" ? "iowa" : "swam";

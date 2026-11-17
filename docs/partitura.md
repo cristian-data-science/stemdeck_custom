@@ -875,6 +875,12 @@ apagado: «Random Dynamic» (9 → 3, su mínimo) y «Dynamic Pitch» (30 → 0)
 la altura del intérprete hacían sonar distinta la misma nota. Medido en los 2 primeros minutos de
 Careless Whisper, misma nota repetida (desviación estándar): aire 1,51 → 1,23 dB, brillo 12,5 →
 11,8 %. Dos grabaciones de la misma línea son idénticas muestra a muestra.
+**Sala** (abajo, solo con SWAM): la sala del propio SWAM, un modelo de sala (`swam.ROOMS`: tamaño,
+materiales, distancia del saxo). «Reverb Mix» y «Reverb Time» no hacen nada en SWAM 3 salvo con
+«Legacy Reverb» (medido: la grabación sale idéntica). Cola 0,35-0,65 s después de una nota,
+respecto de la nota: *Seca* −41 dB (MEDIUM 1, absorción alta, 1,2 m), *Media* −28 dB (el plugin
+como viene), *Amplia* −20 dB (LARGE 2, absorción baja). Cambiarla es otra grabación; mientras se
+hace sigue sonando la anterior.
 Variables: `STEMDECK_SWAM_DIR`, `STEMDECK_SWAM_PYTHON`, `STEMDECK_SWAM_OFF=1`.
 
 **Las notas de la voz** (sin RMVPE) no salen solo del modelo de transcripción (Basic Pitch, hecho para

@@ -92,9 +92,28 @@ def available() -> dict:
 STEADY = {"Random Dynamic": 0.0, "Dynamic Pitch": 0.0}
 
 
+# «Sala»: SWAM's own room, a model of a room (its size, what its walls are
+# made of, how far the saxophone is). "Reverb Mix" and "Reverb Time" do
+# nothing in SWAM 3 unless "Legacy Reverb" is on (measured: the render is
+# the same sample for sample). "medium" is the plugin as it comes (MEDIUM 3,
+# medium absorption, 3 m): nothing set. Measured, the tail 0.35-0.65 s after
+# a note against the note: dry -41 dB, medium -28 dB, large -20 dB.
+ROOMS = {
+    "dry": {
+        "Room Sizes": 0.0,
+        "Absorption Materials": 0.0,
+        "Source Distance": 0.0,
+    },  # MEDIUM 1, HIGH, 1.2 m
+    "medium": {},
+    "large": {"Room Sizes": 0.8, "Absorption Materials": 1.0},  # LARGE 2, LOW
+}
+
+
 def plugin_params(payload: dict) -> dict[str, float]:
     """SWAM's settings for this render: its parameter's name -> 0..1."""
-    return dict(STEADY)
+    params = dict(STEADY)
+    params.update(ROOMS.get(payload.get("room") or "medium", {}))
+    return params
 
 
 def _performance(payload: dict) -> dict:
