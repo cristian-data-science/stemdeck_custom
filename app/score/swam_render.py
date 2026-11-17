@@ -114,6 +114,10 @@ def events(data: dict) -> list[tuple[float, list[int]]]:
     levels = [_note_level(n) for n in notes]
     middle = max(90.0, min(112.0, _median(levels))) if levels else 100.0
     breath = [max(70.0, min(122.0, middle + EVEN * (lv - middle))) for lv in levels]
+    # «Tono»: how hard the saxophone is blown, as a share of the above
+    # (blown softer, SWAM's tone is airier: its subtone).
+    blow = float(data.get("blow") or 1.0)
+    breath = [max(30.0, min(127.0, b * blow)) for b in breath]
     for i, n in enumerate(notes):
         start, end, midi = float(n["start"]), float(n["end"]), int(n["midi"])
         sent = midi + octave  # the key SWAM is asked for (the bend stays against `midi`)

@@ -964,6 +964,7 @@ function swamPayload() {
     duration: Math.round((last + 3) * 10) / 10,
     cents: Math.round((state.cents || 0) * 10) / 10,
     room: ["dry", "large"].includes(prefs.room) ? prefs.room : "medium",
+    tone: ["soft", "growl"].includes(prefs.tone) ? prefs.tone : "clean",
     notes: state.notes.map((n) => {
       const out = { start: r2(n.start), end: r2(n.end), midi: n.midi, velocity: Math.max(1, Math.min(127, Math.round(n.velocity ?? 80))), legato: !!n.legato };
       const c = exact ? null : curveOf(n, 1);
@@ -1249,6 +1250,13 @@ function wire() {
   $("sx-room").value = ["dry", "large"].includes(prefs.room) ? prefs.room : "medium";
   $("sx-room").onchange = () => {
     prefs.room = $("sx-room").value;
+    savePrefs();
+    swamSoon();
+  };
+  // «Tono»: how SWAM's saxophone is blown (another render, as «Sala»).
+  $("sx-tone").value = ["soft", "growl"].includes(prefs.tone) ? prefs.tone : "clean";
+  $("sx-tone").onchange = () => {
+    prefs.tone = $("sx-tone").value;
     savePrefs();
     swamSoon();
   };

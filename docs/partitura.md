@@ -881,6 +881,10 @@ materiales, distancia del saxo). «Reverb Mix» y «Reverb Time» no hacen nada 
 respecto de la nota: *Seca* −41 dB (MEDIUM 1, absorción alta, 1,2 m), *Media* −28 dB (el plugin
 como viene), *Amplia* −20 dB (LARGE 2, absorción baja). Cambiarla es otra grabación; mientras se
 hace sigue sonando la anterior.
+**Tono** (abajo, solo con SWAM; `swam.TONES`): *Limpio*, como venía. *Suave, con aire*: soplado al
+70 % (SWAM oscurece y airea el tono al soplar más suave: 8 dB menos sobre 5 kHz, medido) y su
+ruido de aire al máximo. *Rasgado*: el «Growl» de SWAM al 35 % (el volumen tiembla a 20-90 Hz:
++3 dB, medido). El parámetro «Breath Noise» solo casi no cambia el sonido a soplido normal (medido).
 Variables: `STEMDECK_SWAM_DIR`, `STEMDECK_SWAM_PYTHON`, `STEMDECK_SWAM_OFF=1`.
 
 **Las notas de la voz** (sin RMVPE) no salen solo del modelo de transcripción (Basic Pitch, hecho para

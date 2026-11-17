@@ -527,3 +527,26 @@ def test_swam_room_is_part_of_the_render():
     assert len({swam.render_key(p) for p in (medium, dry, large)}) == 3
     with pytest.raises(ValueError):
         SwamBody(sax="alto", duration=4, notes=notes, room="cathedral")
+
+
+def test_swam_tone_is_how_it_is_blown():
+    """«Tono»: soft is blown softer (the breath lower) with SWAM's breath
+    noise up; growl turns SWAM's growl on; each is another render."""
+    from app.api.sax import SwamBody
+    from app.score import swam
+    from app.score import swam_render as R
+
+    notes = [{"start": 1.0, "end": 2.0, "midi": 69, "velocity": 100}]
+    clean = SwamBody(sax="alto", duration=4, notes=notes).model_dump()
+    soft = SwamBody(sax="alto", duration=4, notes=notes, tone="soft").model_dump()
+    growl = SwamBody(sax="alto", duration=4, notes=notes, tone="growl").model_dump()
+    assert swam.plugin_params(clean) == swam.STEADY
+    assert swam.plugin_params(soft)["Breath Noise"] == 1.0
+    assert swam.plugin_params(growl)["Growl"] > 0
+    assert len({swam.render_key(p) for p in (clean, soft, growl)}) == 3
+
+    def top(blow):
+        ev = R.events({"notes": notes, "blow": blow})
+        return max(b[2] for t, b in ev if b[0] == 0xB0)
+
+    assert top(swam.TONES["soft"]["blow"]) < top(1.0) * 0.75

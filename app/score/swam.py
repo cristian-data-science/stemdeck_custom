@@ -109,10 +109,26 @@ ROOMS = {
 }
 
 
+# «Tono»: how the saxophone is blown. "clean" is as it was. "soft": blown
+# at 70 % (SWAM's tone gets darker and airier the softer it is blown: 8 dB
+# less above 5 kHz, measured) with its breath noise at the most. "growl":
+# SWAM's growl at 35 % (the loudness fluttering at 20-90 Hz: +3 dB, measured).
+TONES = {
+    "clean": {"blow": 1.0, "params": {}},
+    "soft": {"blow": 0.7, "params": {"Breath Noise": 1.0}},
+    "growl": {"blow": 1.0, "params": {"Growl": 0.35}},
+}
+
+
+def _tone(payload: dict) -> dict:
+    return TONES.get(payload.get("tone") or "clean", TONES["clean"])
+
+
 def plugin_params(payload: dict) -> dict[str, float]:
     """SWAM's settings for this render: its parameter's name -> 0..1."""
     params = dict(STEADY)
     params.update(ROOMS.get(payload.get("room") or "medium", {}))
+    params.update(_tone(payload)["params"])
     return params
 
 
@@ -126,6 +142,7 @@ def _performance(payload: dict) -> dict:
         "cents": payload.get("cents", 0),
         "octave": OCTAVE.get(sax, 0),
         "notes": payload["notes"],
+        "blow": _tone(payload)["blow"],
     }
     return {
         "v": VERSION,
@@ -223,6 +240,7 @@ def _render(key: str, dest: Path, payload: dict) -> None:
         "cents": payload.get("cents", 0),
         "octave": OCTAVE.get(sax, 0),
         "notes": payload["notes"],
+        "blow": _tone(payload)["blow"],
         "params": plugin_params(payload),
     }
     dest.parent.mkdir(parents=True, exist_ok=True)

@@ -351,6 +351,7 @@ class SwamBody(BaseModel):
     cents: float = Field(default=0, ge=-60, le=60)
     notes: list[SwamNote] = Field(max_length=8000)
     room: str = Field(default="medium", pattern=r"^(dry|medium|large)$")  # «Sala»
+    tone: str = Field(default="clean", pattern=r"^(clean|soft|growl)$")  # «Tono»
 
 
 def _swam_folder(job_id: str) -> Path:
