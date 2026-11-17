@@ -347,6 +347,10 @@ body:has(.sc-pt-status:not([hidden])) .sc-hands-msg { bottom: 52px; }
 }
 /* ↶ ↷ on the playback bar: a finger's size (a tablet has no Ctrl+Z). */
 .sc-undo-btn { min-width: 42px; min-height: 36px; font-size: 19px; line-height: 1; padding: 0 8px; }
+/* ↶ ↷ on the playback bar: where the editing row is not (the piano view, «Controles ▾»);
+   on the score they would be the editing row's twice. */
+.sc-transport .sc-undo-btn { display: none; }
+.sc-fall-mode .sc-transport .sc-undo-btn, .sc-compact .sc-transport .sc-undo-btn { display: inline-flex; align-items: center; justify-content: center; }
 .sc-undo-btn:disabled { opacity: 0.35; }
 
 /* «Velocidad»: four fixed speeds; ✓ when Pianoteq has it for both hands and

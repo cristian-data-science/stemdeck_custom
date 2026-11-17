@@ -516,6 +516,9 @@ partitura); (2) práctica (bucle, silenciar una mano, metrónomo, cuenta, teclad
 de edición (↶ ↷, ＋ Nota, Limpiar, Restaurar, ?) junto a la línea de estado. **🎼 Ajustes** despliega
 los de la transcripción, que se tocan una vez por canción (plegados de entrada; se recuerda), y
 **⬇ Exportar** junta las cuatro descargas. En escritorio la partitura empieza 80 px más arriba.
+Cada vista muestra lo suyo: Zoom, Seguir, Nombres, 🎼 Ajustes y la fila de edición solo en la
+partitura; estilo, teclado, colores, ＋ Nota y 🖌 Corregir manos solo en el piano. ↶ ↷ de la barra
+de reproducción aparecen solo en el piano (y con «Controles ▾»): en la partitura estaban dos veces.
 
 Ajustes de la partitura (en **🎼 Ajustes**), también persistentes: **Rejilla** (1/8, 1/16, 1/16 + tresillos),
 **Mano derecha desde** (punto de división entre claves), **Tempo** (×½ / ×2 si el tempo

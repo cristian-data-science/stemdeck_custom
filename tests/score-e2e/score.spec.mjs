@@ -211,7 +211,10 @@ test("undo on a tablet: ↶ on the playback bar in the piano view, a two-finger 
   const id = await clickNote(page, (n) => n.midi === 72 && n.staff === 1);
   await page.keyboard.press("ArrowUp");
   await savedOk(page);
-  await page.locator("#sc-view-toggle").click(); // the score's tool bar (↶ Deshacer) is hidden here
+  // On the score, ↶ ↷ once (the editing row's), not twice.
+  await expect(page.locator("#sc-undo")).toBeVisible();
+  await expect(page.locator("#sc-undo2")).toBeHidden();
+  await page.locator("#sc-view-toggle").click(); // the score's editing row (↶ Deshacer) is hidden here
   await expect(page.locator("#sc-undo")).toBeHidden();
   await expect(page.locator("#sc-undo2")).toBeVisible();
   await expect(page.locator("#sc-undo2")).toHaveAttribute("title", /Deshacer: Semitono|Deshacer: /);
@@ -264,7 +267,7 @@ test("🕘 Historial: every saved edit, named, kept after a reload; back to befo
   await expect.poll(() => page.evaluate(() => window.__score.notes.length)).toBe(total);
   expect(await page.evaluate((id) => window.__score.notes.find((n) => n.id === id).midi, id)).toBe(72);
   await expect(rows).toHaveCount(count + 1);
-  // ↶ undoes that too.
+  // ↶ undoes that too (the piano view: the playback bar's).
   await page.locator("#sc-undo2").click();
   await expect.poll(() => page.evaluate(() => window.__score.notes.length)).toBe(total - 1);
   // «Volver al original»: the transcription, no edit at all.
@@ -1143,6 +1146,17 @@ test("the menu in order: the transcription's settings folded under «🎼 Ajuste
   expect(await page.locator("#sc-dl-xml").getAttribute("href")).toContain("export.musicxml");
   await page.keyboard.press("Escape");
   await expect(page.locator("#sc-dl-mid")).toBeHidden();
+});
+
+test("each view shows its own controls: the score's (zoom, names, settings, editing) not on the piano, the piano's not on the score", async ({ page }) => {
+  await open(page);
+  const scoreOnly = ["#sc-zoom", "#sc-follow", "#sc-names", "#sc-settings-toggle", "#sc-undo", "#sc-add", "#sc-status"];
+  const pianoOnly = ["#sc-fall-style", "#sc-fall-ahead", "#sc-fall-keys", "#sc-fall-colors", "#sc-fall-add", "#sc-paint", "#sc-undo2"];
+  for (const s of scoreOnly) await expect(page.locator(s), s).toBeVisible();
+  for (const s of pianoOnly) await expect(page.locator(s), s).toBeHidden();
+  await page.locator("#sc-view-toggle").click();
+  for (const s of scoreOnly) await expect(page.locator(s), s).toBeHidden();
+  for (const s of pianoOnly) await expect(page.locator(s), s).toBeVisible();
 });
 
 test("Controles ▴/▾ hides every control but the playback line, remembered", async ({ page }) => {
