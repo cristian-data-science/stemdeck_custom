@@ -803,7 +803,9 @@ function status(text) {
   const sel = [...state.selection].map((id) => state.notes.find((n) => n.id === id)).filter(Boolean);
   const names = state.data.names;
   if (!sel.length) {
-    $("sc-status").textContent = "Clic en una nota para seleccionarla. «?» muestra los atajos.";
+    // Short, so it fits beside the editing actions on a tablet; the rest on hover.
+    $("sc-status").textContent = "Toca una nota para elegirla · ? atajos";
+    $("sc-status").title = "Clic en una nota para elegirla (Mayús/Ctrl + clic: varias; arrastrar en vacío: un área). «?» muestra todos los atajos de teclado.";
   } else if (sel.length === 1) {
     const n = sel[0];
     $("sc-status").textContent =

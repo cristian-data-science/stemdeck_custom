@@ -46,7 +46,7 @@ html, body { margin: 0; background: var(--bg); color: var(--fg); font-family: va
    measured live (main.js), since every bar wraps to more rows on a tablet. */
 .sc-editrow { position: sticky; top: calc(var(--sc-top-h, 53px) + var(--sc-transport-h, 52px)); z-index: 14;
   justify-content: space-between; padding-top: 4px; padding-bottom: 4px; }
-.sc-editrow .sc-status { padding: 0; min-height: 0; flex: 1 1 260px; }
+.sc-editrow .sc-status { padding: 0; min-height: 0; flex: 1 1 200px; }
 .sc-edit-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 /* «🎼 Ajustes»: folded away until asked for (main.js setSettings). */
 .sc-tools { display: none; background: var(--bg-2); }
