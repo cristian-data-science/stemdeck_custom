@@ -359,7 +359,8 @@ async function load(data) {
   $("sc-export").hidden = false;
   const job = await api(`/api/jobs/${JOB}`).catch(() => null);
   // The song's length at once (it said 0:00 until the audio had loaded).
-  if (job?.duration && !player.duration) $("sc-total").textContent = formatTime(job.duration);
+  state.songDuration = job?.duration || 0;
+  if (state.songDuration && !player.duration) $("sc-total").textContent = formatTime(state.songDuration);
   const stems = (job?.stems || []).map((s) => s.name || s);
   player.setUrls({
     // FLAC (lossless, seeks to the sample): switching between the stem, the
@@ -2759,7 +2760,7 @@ function miniLine(t) {
   const speed = Math.round(player.rate * 100);
   const parts = [
     `<b>${escapeHtml(d.job?.title || JOB)}</b>`,
-    `${formatTime(t)} / ${formatTime(player.duration)}`,
+    `${formatTime(t)} / ${formatTime(player.duration || state.songDuration)}`,
     measures.length ? `compás ${i >= 0 ? measures[i].number : 0} de ${measures.length}` : "",
     speed !== 100 ? `${speed} %` : "",
     state.loop?.on ? `🔁 ${state.loop.from}–${state.loop.to}` : "",

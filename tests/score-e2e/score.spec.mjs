@@ -1193,6 +1193,10 @@ test("the song's length is shown at once, before its audio has loaded", async ({
   const want = `${Math.floor(job.duration / 60)}:${String(Math.floor(job.duration % 60)).padStart(2, "0")}`;
   expect(await page.evaluate(() => document.getElementById("sc-audio").readyState)).toBe(0);
   await expect(page.locator("#sc-total")).toHaveText(want);
+  // The one line of «Ocultar paneles» too.
+  await page.locator("#sc-bare").click();
+  await expect(page.locator("#sc-mini-text")).toContainText(`/ ${want}`);
+  await page.locator("#sc-mini-panels").click();
   release();
 });
 
