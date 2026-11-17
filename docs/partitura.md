@@ -759,6 +759,185 @@ Demucs) lo deja todo en **piano**, parejo de principio a fin; escuchado y confir
   conviene escuchar la copia antes de quedarse con ella. Cancelar una separación con RoFormer
   espera a que termine el modelo.
 
+## 🎷 Saxo: una parte de la canción como línea de saxo
+
+En el estudio, el **🎷** de la cabecera del mezclador (al lado de «Mezclador») abre `/sax/` con la
+canción en el punto donde iba (el estudio se pausa). Arriba eliges **qué toca el saxo**: Voz,
+Piano, Guitarra, Otros, Bajo, uno o varios. El primero que eliges es la melodía (**1**); los
+demás (**2**, **3**…) solo rellenan donde el primero calla (por ejemplo Voz + Piano: la voz, y
+el piano en los puentes sin voz). Cada stem se transcribe la primera vez (como su partitura; la
+voz de una canción de 3:40 tardó ~30 s) y queda guardado.
+
+**Cómo se arma la línea:** el saxo toca una nota a la vez, así que de cada acorde queda la nota
+de arriba (la melodía), y cada nota termina donde empieza la siguiente. Después se lleva al
+registro del saxo **por frase** (una frase entera sube o baja de octava, así conserva su forma;
+lo marca «8va ↑» donde empieza) y se escribe **transpuesta** para el saxo elegido: **Alto (Mi♭)**,
+Tenor (Si♭), Soprano (Si♭) o Barítono (Mi♭). Lo que lees es lo que tocas; debajo dice cómo suena
+(«suena La4»).
+
+**Qué se ve:**
+
+| Dónde | Qué |
+|---|---|
+| Carril | las notas llegan de derecha a izquierda sobre un pentagrama en clave de sol, a su altura, cada nota de un color (el mismo color siempre para la misma nota), con su nombre y líneas adicionales; chispas al sonar; «’» donde hay que respirar |
+| Arriba | las próximas notas, grandes y de color; la que suena, resaltada; «’ respira» en los silencios |
+| Saxo (izquierda) | **las llaves de la digitación de la nota que suena**, encendidas en su color; las de la nota siguiente, con un anillo punteado (para preparar los dedos); debajo, la nota en grande |
+
+Las digitaciones son las estándar de Si♭3 a Fa6 (escritas), con la llave de octava, bis, palmas
+y meñiques; hay alternativas (Si♭ lateral, Fa♯ de horquilla…) que no se muestran.
+
+**RMVPE** (la voz, desde 2026-11-16): si están sus pesos en `.run/tools/rmvpe/rmvpe.pt` (181 MB,
+de huggingface.co/lj1995/VoiceConversionWebUI; MIT vía el proyecto RVC, original Dream-High/RMVPE
+Apache-2.0; se verifica su SHA-256 al cargar), el tono de la voz lo lee RMVPE, un modelo hecho para
+voz cantada dentro de una mezcla, en la GPU: una canción de 3:16 en ~1,3 s (4 s la primera vez,
+con la carga). La línea son sus propias notas: en voces de notas conocidas (vibrato, deslizamientos,
+sala, el resto de la banda colado) acierta 94 / 97 / 90 %, contra 85 / 88 / 78 % mezclado con la
+transcripción de Basic Pitch y 80 / 79 / 66 % con Basic Pitch solo. Sin los pesos, se usa lo de
+abajo (pYIN). Para instalarlo: descargar `rmvpe.pt` a esa carpeta (o `STEMDECK_RMVPE=<ruta>`).
+
+**Sonido: Expresivo (como canta)** (por defecto) — el saxo toca la voz como fue cantada: cada
+nota con la grabación sin vibrato de esa altura (Iowa, `-novib`), y encima la curva real de la voz
+cada 20 ms (sus deslizamientos, su vibrato, sus matices de volumen), acotada a ±2 semitonos de la
+nota. Verificado midiendo el audio que sale: una nota con vibrato y un deslizamiento de Mi4 a Sol4
+sale en 63,95 y 67,05. *Notas exactas*: cada nota fija, con la grabación con vibrato. El piano y los
+demás stems siempre suenan como notas exactas (no tienen curva de voz).
+
+**🎤 Practicar**: tocas tu saxo y el micrófono lo escucha (YIN, sin cancelación de eco ni
+supresión de ruido, que deforman el tono). En el carril, un círculo «tú» a tu altura (verde: en la
+nota; ámbar: a menos de un semitono; rojo: más lejos) con su estela; bajo el saxo, un medidor de
+±100 cents y «↑ sube / ↓ baja», o «una octava arriba» si es la nota correcta en otra octava. Cada
+nota cuenta como acierto si estuviste en ella el 40 % de lo que dura («Aciertos 34/50 (68 %)»).
+**⏸ Esperarme**: la canción se detiene en cada nota hasta que la tocas afinado un momento. El
+micrófono escucha la nota real (de concierto): tocas lo escrito para tu saxo y él compara lo que
+suena.
+
+**Un saxo (o vientos) en «Otros»** (2026-11-16): el separador no tiene stem de saxo; el saxo,
+los vientos, las cuerdas y los sintetizadores quedan en *Otros*. Con RMVPE, la línea de *Otros*
+se sigue nota a nota como una voz (`GET /sax/line/other`, `voice_line.analyse(wav, "instrument")`:
+mediana de 70 ms en vez del promedio de vibrato de la voz, que borroneaba los pasajes rápidos) y
+se frasea como voz; una nota corta pegada a dos vecinas va a la más cercana en altura (un *scoop*
+es el inicio de la nota a la que entra). Medido en una línea de saxo conocida (grabaciones reales
+de Iowa con scoops, sobre colchones, cuerdas, bajo y sala): notas correctas 66 / 75 / 80 % contra
+46 / 45 / 39 % de Basic Pitch (que tomaba las notas de arriba de los colchones y octavas falsas).
+En «Careless Whisper» (cover instrumental) el rango pasó de Mi1–Re7 a La3–Re6. Si la voz casi no
+suena (`stem_presence` < 20) la página empieza en *Otros* y lo dice; el 🎷 del estudio ya no fija
+la Voz.
+
+**✏️ Editar**: toca una nota (la canción se pausa y la nota suena) y bórrala (🗑 / Supr), súbela o
+bájala un semitono (▲▼ / ↑↓, o arrástrala arriba/abajo), una octava (8↑ 8↓ / Mayús+↑↓) o muévela en
+el tiempo (◀ ▶ / ←→, o arrástrala a los lados). ↶ ↷ (Ctrl+Z / Ctrl+Y) deshacen y rehacen; «Volver
+al original» quita todos los cambios de esa línea (también se deshace). Se guardan por línea
+(stems + fraseo) en `score/sax_edits.json` (`GET/PUT /sax/edits`; no lo borra «Limpiar caché»),
+cada nota nombrada por su stem, su inicio y su altura de concierto: sobreviven a cambiar de saxo.
+Al borrar, queda elegida la siguiente: una racha de notas basura sale tecla por tecla. La duración: ⇤ Corta / Larga ⇥ (Alt+← / Alt+→, de a 0,1 s) o arrastrando el borde derecho de la nota; una nota alargada tapa el inicio de la siguiente (y la quita si no queda nada de ella).
+
+**Arrastrar la pista** (como las notas cayendo del piano): con el clic (o el dedo) sobre la pista, la canción se mueve con el puntero; si sonaba, se pausa mientras arrastras y sigue al soltar. En «Editar», arrastrar sobre el espacio vacío hace lo mismo.
+
+**La franja de arriba** muestra la frase que se toca (hasta la próxima respiración; máximo 10 notas, cortada en su pausa más larga), toda de una vez y de un solo color: la que suena en dorado, las ya tocadas atenuadas, cada una un poco más arriba o abajo según la melodía; después de «luego», el inicio de la frase siguiente. Cambia solo al pasar de frase (antes: nueve notas de colores distintos que se corrían en cada nota).
+
+**Digitación**: *Diagrama grande* (por defecto, `static/js/sax/chart.js`; el botón «🖼 Ver foto» bajo el nombre de la nota cambia a la foto y «▦ Ver diagrama» vuelve): las llaves por manos (izquierda arriba, derecha abajo), los dedos 1-2-3, el pulgar con la octava, la palma, los meñiques y la lateral, cada una con su nombre; las que se aprietan en dorado y las de la nota siguiente con un anillo celeste punteado. *Foto del saxo (anterior)*: la vista de antes (`horn.js`), para volver a ella.
+
+**Saxo: SWAM (modelado físico)** (por defecto si está instalado; abajo, «Saxo»): la línea la toca
+*SWAM Saxophones* de Audio Modeling (de pago, instalado aparte), como Pianoteq toca la partitura.
+La página manda la línea tal como suena (fraseada, en el rango, con las ediciones y, en
+«Expresivo», la curva de cada nota); `app/score/swam.py` la graba en segundo plano (~15 s una
+canción de 4 min) y la página la toca en un `<audio>` propio, atado al reloj de la canción (con su
+velocidad; desfase medido ≤ 23 ms al 100 % y al 50 %). Mientras graba suena el saxo grabado
+(Iowa); tras una edición sigue la grabación anterior hasta que llega la nueva. Cómo toca
+(`app/score/swam_render.py`): las notas ligadas se solapan (SWAM hace la transición); el soplido
+(Expression, CC11) es **parejo**: un nivel por nota, con solo el 20 % de su volumen grabado frente
+al centro de la línea, y la misma forma en todas (entra en 60 ms, salvo ligada, y se asienta un
+poco). Antes seguía el volumen de la pista «Otros» cada 20 ms, que sube y baja con los pads y la
+reverberación: el soplido temblaba dentro de la nota y la misma nota salía con más o menos aire
+cada vez (Careless Whisper: CC11 saltando 12-32 pasos en 20 ms; una nota entre 67 y 127). El
+ataque (velocity) se empareja igual. La afinación de la canción y la curva (deslizamientos,
+vibrato) van por el pitch bend (±2 semitonos), limpia de los saltos del detector (un cuadro a más
+de un semitono pasado el ataque se descarta, mediana de 3 y suavizado; ±½ semitono pasado el
+ataque). Medido en Careless Whisper, misma nota repetida: el aire varía 5,2 dB (antes 9,7) y el
+brillo 42 % (antes 55 %); con el soplido del todo plano no mejora más: lo que queda es SWAM según
+el contexto (ataque o ligada, largo de la nota). «Exacto» (sin curva) es lo más parejo. Una nota
+**alargada** con ✏️ se sostiene en lo agregado (su altura asentándose en la nota y su último nivel,
+`curveOf` en `static/js/sax/main.js`): antes leía lo que la grabación hacía después (silencios y las
+notas siguientes) y sonaba como la misma nota pegada varias veces (Careless Whisper: el soplido
+127 → 51 → 127 y la altura un tono abajo). El aire se corta entre dos notas solo si hay un silencio
+de más de 60 ms, y nunca dentro de la nota siguiente. Medido: notas a la altura pedida en el 92 % del tiempo (dentro de un
+semitono el 98 %; lo demás son las curvas); el tenor y el barítono de SWAM suenan una octava bajo
+la nota MIDI y se mandan una octava arriba. Se aloja con DawDreamer (carga el VST2 `.dll` que
+instala el Software Center en `C:\Program Files\Common Files\VST2\SWAM\Saxophones`) en un entorno
+aparte, `.run/tools/swam-venv` (`uv venv` + `uv pip install dawdreamer numpy soundfile mido`), y
+en un proceso aparte: si el plugin se cae no se lleva el servidor. Grabaciones en
+`score/audio/swam-<clave>.flac` (las 12 más nuevas por canción; «Limpiar caché» las borra). La
+clave es un hash de lo que SWAM toca (los eventos MIDI de `swam_render.events()`, el saxo, el
+largo), no de lo que manda la página: al cerrar y abrir la app, o con cualquier cambio que no cambie
+cómo suena, se usa la grabación ya hecha. Las grabaciones con la clave anterior (un hash de lo que
+mandaba la página) se renombran a la nueva cuando se piden, sin grabarse de nuevo.
+Variables: `STEMDECK_SWAM_DIR`, `STEMDECK_SWAM_PYTHON`, `STEMDECK_SWAM_OFF=1`.
+
+**Las notas de la voz** (sin RMVPE) no salen solo del modelo de transcripción (Basic Pitch, hecho para
+instrumentos): se revisan contra un seguidor de tono (pYIN) que lee la voz nota por nota
+(`app/score/voice_line.py`, `GET /api/jobs/{id}/sax/line/vocals`, se guarda en
+`score/vocals/sax_line.json`; la primera vez tarda ~1-2 min en una canción de 3-4 min). Donde
+discrepan por 1 a 5 semitonos manda el seguidor (salvo una octava exacta: ahí el seguidor suele
+engancharse al bajo que queda en el stem), y donde el modelo no vio nada se agregan las notas del
+seguidor. Medido en la voz de «Esta noche» (90 s): con el modelo solo, el 71 % del canto tenía
+nota y el 85 % de eso estaba en el tono que mide el seguidor; ahora el 87 % tiene nota y coincide
+el 85-95 %. En voces sintéticas con vibrato, deslizamientos, sala y el resto de la banda colado
+(notas conocidas): 80/79/66 % de notas acertadas antes, 81/84/79 % ahora.
+
+**Fraseo** (arriba): *Ligado* (por defecto) toca la línea como un saxofonista: una nota sostenida
+en vez de sus pedazos (la transcripción corta una nota cantada en cada sílaba o bajón de volumen),
+sin adornos de menos de ~0,1 s ni notas sueltas que saltan lejos de lo que suena alrededor (lo que
+queda de la banda en el stem; un salto de octava se devuelve a su octava), y los silencios
+mínimos ligados; las notas ligadas suenan sin un nuevo ataque. El piano (y la guitarra, otros) se
+liga con márgenes más amplios que la voz: su acompañamiento son golpes cortos. *Todas las notas*:
+tal como salieron, para comparar. Medido en «Y dime» (Agrupación Marilyn): voz de 407 a 255 notas
+(130 eran una nota partida, 22 sueltas; notas de menos de 0,15 s del 18 al 8 %), piano de 568 a
+420 (cortas del 30 al 8 %, sueltas de 48 a 15), sin perder tiempo con nota (99 → 104 s y
+115 → 124 s).
+
+**Rapidez:** la línea de una voz ya no espera la partitura completa (pulso, notas fantasma y
+grabado eran ~35 s que el saxo no usa): el servidor transcribe y sigue el tono a la vez, el
+seguimiento repartido en 8 procesos a 16 kHz. «Y dime» (3:16): de más de 100 s a 10 s la primera
+vez, y al instante después. Además se calcula sola en segundo plano después de cada separación y,
+al arrancar el servidor, la de todas las canciones con voz (`STEMDECK_SAX_AUTO=0` lo apaga).
+
+**El piano toca su mano derecha** (la del modelo de manos): con las dos manos se colaban el bajo y
+los acordes (intrusas en «Y dime» de 48 a 10, en «Barbarossa» de 27 a 10). Si la parte elegida
+salta mucho (más del 35 % de saltos de 7 semitonos o más), avisa: es acompañamiento, no melodía
+(el piano de «Esta noche», 49 %), y la melodía suele estar en la voz.
+
+**Ninguna nota muda:** dos tercios de las notas grabadas empezaban en crescendo (hasta 1 s hasta
+sonar) y las suaves (pp) estaban ~35 dB abajo: una nota corta de una canción terminaba antes de
+oírse. Ahora cada nota grabada empieza donde suena (la mitad de su volumen en 17 ms de mediana,
+0,11 s como máximo) y la grabación suave solo se usa para notas muy suaves. Comprobado tocando
+las 384 combinaciones (cada nota de los dos saxos, 3 intensidades, 0,1 y 0,25 s): ninguna muda.
+
+**Afinación:** se mide la afinación de la voz (o la del stem en la partitura) y el saxo toca en
+ella: una grabación unos cents corrida sonaba desafinada contra un saxo en La 440.
+
+**Notas: Para el saxo / Como suenan.** «Para el saxo» muestra lo que lee un saxofonista (un Alto
+lee una sexta mayor más arriba de lo que suena: un Do de la canción es un La en el Alto), con
+«suena …» debajo. «Como suenan» muestra las notas reales de la canción (las de un piano), con «en
+tu saxo: …» debajo. La digitación siempre es la de tu saxo.
+
+**El saxo**: una foto real de un Yamaha YAS-62 (Wikimedia Commons, CC BY-SA 4.0; créditos en
+`static/img/sax/NOTICE.txt`), con las llaves que se pisan encendidas encima, en su lugar exacto, y
+las de la nota siguiente con un anillo.
+
+**Qué se oye** (abajo, «Escuchar»): *Saxo + resto de la canción* (los demás stems, sin los que toca
+el saxo: `GET /api/jobs/{id}/sax/backing.flac?without=vocals,piano`), *Solo saxo* o *Canción
+original* (para comparar). Volumen del saxo 🎷 y del resto 🎶 por separado. **El saxo es
+grabado**: cada nota de un saxofón alto y uno soprano reales (University of Iowa, Musical Instrument
+Samples, intérprete Michael Giles; «libres para cualquier proyecto, sin restricciones»), con
+vibrato y en tres intensidades (pp, mf, ff) según la fuerza de cada nota, en una sala suave; las
+notas más largas que la grabación siguen con su parte sostenida. El Tenor y el Barítono usan las
+notas del Alto llevadas a su altura (no hay grabaciones de esos dos). Las muestras se regeneran
+con `scripts/sax/build_samples.py` (`static/audio/sax/`, 8,5 MB). Mientras cargan, suena un saxo
+sintetizado. Velocidad 25 / 50 / 70 / 100 % sin cambiar la afinación; − / ＋ cuántos segundos de
+notas se ven; un clic en el carril salta a ese momento (sobre una nota, a su comienzo); Espacio
+reproduce o pausa; ← / → 5 s. Cambiar los stems o «Escuchar» mientras suena sigue sonando desde
+el mismo punto (antes se quedaba pegado hasta recargar).
+
 ## Desde el celular o la tablet
 
 En el mezclador del celular:

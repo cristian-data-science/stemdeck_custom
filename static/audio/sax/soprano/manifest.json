@@ -1,0 +1,462 @@
+{
+ "sax": "soprano",
+ "source": "University of Iowa Electronic Music Studios, Musical Instrument Samples (MIS), https://theremin.music.uiowa.edu/MIS.html",
+ "player": "Michael Giles (1997)",
+ "terms": "freely available ... may be downloaded and used for any projects, without restrictions",
+ "layers": [
+  "pp",
+  "mf",
+  "ff"
+ ],
+ "vibrato": true,
+ "notes": {
+  "56": {
+   "ff": {
+    "cents": 10.0,
+    "sec": 3.35
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.53
+   },
+   "pp": {
+    "cents": 20.0,
+    "sec": 3.07
+   }
+  },
+  "57": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 3.35
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.15
+   },
+   "pp": {
+    "cents": 20.0,
+    "sec": 3.73
+   }
+  },
+  "58": {
+   "ff": {
+    "cents": 10.0,
+    "sec": 3.15
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.33
+   },
+   "pp": {
+    "cents": 20.0,
+    "sec": 2.49
+   }
+  },
+  "59": {
+   "ff": {
+    "cents": -0.0,
+    "sec": 3.32
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.3
+   },
+   "pp": {
+    "cents": 20.0,
+    "sec": 2.83
+   }
+  },
+  "60": {
+   "ff": {
+    "cents": 10.0,
+    "sec": 2.55
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.54
+   },
+   "pp": {
+    "cents": 20.0,
+    "sec": 2.59
+   }
+  },
+  "61": {
+   "ff": {
+    "cents": -0.0,
+    "sec": 3.53
+   },
+   "mf": {
+    "cents": -0.0,
+    "sec": 3.57
+   },
+   "pp": {
+    "cents": 10.0,
+    "sec": 2.76
+   }
+  },
+  "62": {
+   "ff": {
+    "cents": -0.0,
+    "sec": 2.94
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.37
+   },
+   "pp": {
+    "cents": 20.0,
+    "sec": 2.7
+   }
+  },
+  "63": {
+   "ff": {
+    "cents": 10.0,
+    "sec": 3.64
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.42
+   },
+   "pp": {
+    "cents": 20.0,
+    "sec": 2.67
+   }
+  },
+  "64": {
+   "ff": {
+    "cents": 10.0,
+    "sec": 3.1
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.31
+   },
+   "pp": {
+    "cents": 20.0,
+    "sec": 2.46
+   }
+  },
+  "65": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 3.38
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.74
+   },
+   "pp": {
+    "cents": 20.0,
+    "sec": 2.37
+   }
+  },
+  "66": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 3.41
+   },
+   "mf": {
+    "cents": 0.0,
+    "sec": 3.47
+   },
+   "pp": {
+    "cents": 10.0,
+    "sec": 2.55
+   }
+  },
+  "67": {
+   "ff": {
+    "cents": -0.0,
+    "sec": 2.97
+   },
+   "mf": {
+    "cents": -0.0,
+    "sec": 3.54
+   },
+   "pp": {
+    "cents": 10.0,
+    "sec": 2.61
+   }
+  },
+  "68": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 4.09
+   },
+   "mf": {
+    "cents": 0.0,
+    "sec": 3.51
+   },
+   "pp": {
+    "cents": 10.0,
+    "sec": 2.58
+   }
+  },
+  "69": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 3.44
+   },
+   "mf": {
+    "cents": -20.0,
+    "sec": 3.76
+   },
+   "pp": {
+    "cents": 10.0,
+    "sec": 2.69
+   }
+  },
+  "70": {
+   "ff": {
+    "cents": -10.0,
+    "sec": 3.45
+   },
+   "mf": {
+    "cents": -0.0,
+    "sec": 3.44
+   },
+   "pp": {
+    "cents": 20.0,
+    "sec": 3.08
+   }
+  },
+  "71": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 3.22
+   },
+   "mf": {
+    "cents": 0.0,
+    "sec": 3.47
+   },
+   "pp": {
+    "cents": 10.0,
+    "sec": 2.5
+   }
+  },
+  "72": {
+   "ff": {
+    "cents": 20.0,
+    "sec": 2.73
+   },
+   "mf": {
+    "cents": 20.0,
+    "sec": 2.59
+   },
+   "pp": {
+    "cents": 30.0,
+    "sec": 3.24
+   }
+  },
+  "73": {
+   "ff": {
+    "cents": -0.0,
+    "sec": 3.09
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.53
+   },
+   "pp": {
+    "cents": 20.0,
+    "sec": 2.86
+   }
+  },
+  "74": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 3.19
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.18
+   },
+   "pp": {
+    "cents": 20.0,
+    "sec": 2.91
+   }
+  },
+  "75": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 3.09
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.17
+   },
+   "pp": {
+    "cents": 30.0,
+    "sec": 2.77
+   }
+  },
+  "76": {
+   "ff": {
+    "cents": -0.0,
+    "sec": 3.27
+   },
+   "mf": {
+    "cents": -0.0,
+    "sec": 3.07
+   },
+   "pp": {
+    "cents": 10.0,
+    "sec": 2.67
+   }
+  },
+  "77": {
+   "ff": {
+    "cents": 10.0,
+    "sec": 3.48
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.07
+   },
+   "pp": {
+    "cents": 30.0,
+    "sec": 2.97
+   }
+  },
+  "78": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 3.42
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.39
+   },
+   "pp": {
+    "cents": 30.0,
+    "sec": 3.29
+   }
+  },
+  "79": {
+   "ff": {
+    "cents": 10.0,
+    "sec": 3.11
+   },
+   "mf": {
+    "cents": 20.0,
+    "sec": 3.03
+   },
+   "pp": {
+    "cents": 20.0,
+    "sec": 3.32
+   }
+  },
+  "80": {
+   "ff": {
+    "cents": 20.0,
+    "sec": 3.13
+   },
+   "mf": {
+    "cents": 20.0,
+    "sec": 2.87
+   },
+   "pp": {
+    "cents": 30.0,
+    "sec": 3.18
+   }
+  },
+  "81": {
+   "ff": {
+    "cents": 20.0,
+    "sec": 3.21
+   },
+   "mf": {
+    "cents": 20.0,
+    "sec": 3.26
+   },
+   "pp": {
+    "cents": 20.0,
+    "sec": 3.06
+   }
+  },
+  "82": {
+   "ff": {
+    "cents": 10.0,
+    "sec": 3.14
+   },
+   "mf": {
+    "cents": 20.0,
+    "sec": 3.22
+   },
+   "pp": {
+    "cents": 30.0,
+    "sec": 3.51
+   }
+  },
+  "83": {
+   "ff": {
+    "cents": 10.0,
+    "sec": 3.08
+   },
+   "mf": {
+    "cents": 20.0,
+    "sec": 3.2
+   },
+   "pp": {
+    "cents": 20.0,
+    "sec": 3.28
+   }
+  },
+  "84": {
+   "ff": {
+    "cents": 10.0,
+    "sec": 3.12
+   },
+   "mf": {
+    "cents": 20.0,
+    "sec": 2.69
+   },
+   "pp": {
+    "cents": 30.0,
+    "sec": 3.24
+   }
+  },
+  "85": {
+   "ff": {
+    "cents": 30.0,
+    "sec": 3.23
+   },
+   "mf": {
+    "cents": 30.0,
+    "sec": 3.04
+   },
+   "pp": {
+    "cents": 30.0,
+    "sec": 2.89
+   }
+  },
+  "86": {
+   "ff": {
+    "cents": 30.0,
+    "sec": 2.55
+   },
+   "mf": {
+    "cents": 50.0,
+    "sec": 3.14
+   },
+   "pp": {
+    "cents": 50.0,
+    "sec": 3.04
+   }
+  },
+  "87": {
+   "ff": {
+    "cents": 40.0,
+    "sec": 3.51
+   },
+   "mf": {
+    "cents": 50.0,
+    "sec": 3.52
+   },
+   "pp": {
+    "cents": 50.0,
+    "sec": 3.63
+   }
+  }
+ }
+}

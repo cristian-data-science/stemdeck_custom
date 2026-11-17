@@ -1288,3 +1288,32 @@ def test_storage_cleans_the_score_pages_copies_and_they_come_back(
     assert r == {"files": 2, "bytes": 1500}
     assert not (score / "full_mix.wav").exists() and not (score / "audio").exists()
     assert (score / "piano" / "raw.json").is_file()  # the score itself stays
+
+
+# -- «🎷 Saxo»: the rest of the song under the saxophone ----------------------
+
+
+def test_sax_backing_is_the_song_without_the_stems_the_saxophone_plays(client, done_job, jobs_dir):
+    import numpy as np
+    import soundfile as sf
+
+    stems = jobs_dir / JOB / "stems"
+    sr = 44100
+    for name, amp in (("piano", 0.1), ("drums", 0.2), ("bass", 0.3), ("vocals", 0.25)):
+        sf.write(stems / f"{name}.wav", np.full((sr, 2), amp, dtype="float32"), sr)
+    r = client.get(f"/api/jobs/{JOB}/sax/backing.flac?without=vocals,piano")
+    assert r.status_code == 200
+    out = jobs_dir / JOB / "score" / "audio" / "backing-piano-vocals.flac"
+    data, rate = sf.read(out)
+    assert rate == sr and abs(float(data[sr // 2, 0]) - 0.5) < 0.01  # drums + bass
+    # The lead voice alone, when the voice was split: the backing voices stay.
+    sf.write(stems / "lead_vocals.wav", np.full((sr, 2), 0.05, dtype="float32"), sr)
+    sf.write(stems / "backing_vocals.wav", np.full((sr, 2), 0.07, dtype="float32"), sr)
+    assert client.get(f"/api/jobs/{JOB}/sax/backing.flac?without=lead_vocals,piano").status_code == 200
+    data, _ = sf.read(jobs_dir / JOB / "score" / "audio" / "backing-lead_vocals-piano.flac")
+    assert abs(float(data[sr // 2, 0]) - 0.57) < 0.01  # drums + bass + backing voices
+    # Nothing left: said.
+    for name in ("drums", "bass", "vocals", "lead_vocals", "backing_vocals"):
+        (stems / f"{name}.wav").unlink()
+    assert client.get(f"/api/jobs/{JOB}/sax/backing.flac?without=piano").status_code == 404
+    assert client.get(f"/api/jobs/{JOB}/sax/backing.flac?without=../x").status_code == 422

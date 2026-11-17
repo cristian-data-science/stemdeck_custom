@@ -16,6 +16,8 @@ def _no_auto_pianoteq(monkeypatch):
     never asked, holding its render lock across tests. A test that wants it
     sets STEMDECK_PIANOTEQ_AUTO=1 (with a stub Pianoteq)."""
     monkeypatch.setenv("STEMDECK_PIANOTEQ_AUTO", "0")
+    monkeypatch.setenv("STEMDECK_SAX_AUTO", "0")  # the voices' sax lines (app/api/sax.py)
+    monkeypatch.setenv("STEMDECK_SWAM_OFF", "1")  # SWAM Saxophones, when installed here (app/score/swam.py)
     # Nor a piano score queued by itself after every separation a test runs
     # (app/api/score.py prepare_after_separation).
     monkeypatch.setenv("STEMDECK_SCORE_AUTO", "0")

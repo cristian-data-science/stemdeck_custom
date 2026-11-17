@@ -5803,3 +5803,9 @@ input, textarea { font-family: inherit; }
 .settings-storage-song-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
 .settings-storage-song-pt { color: var(--muted); }
 .settings-storage-song-detail { display: flex; flex-direction: column; gap: 8px; padding: 4px 2px 10px; }
+
+/* «🎷 Saxo» in the mixer's header (mixer.js wireSaxLink). */
+.daw-sax-link { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 22px;
+  margin-left: 6px; border-radius: 6px; font-size: 15px; text-decoration: none; vertical-align: middle;
+  border: 1px solid rgba(244, 183, 64, 0.35); background: rgba(244, 183, 64, 0.10); }
+.daw-sax-link:hover { background: rgba(244, 183, 64, 0.25); }

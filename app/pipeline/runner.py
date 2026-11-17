@@ -506,6 +506,13 @@ async def _run_async(
         prepare_after_separation(job)
     except Exception:  # noqa: BLE001 -- optional; the score page can start it
         logger.warning("[%s] could not queue the piano score", job.id, exc_info=True)
+    # The voice as a saxophone line, made now: «🎷 Saxo» opens on it at once.
+    try:
+        from app.api.sax import sax_soon
+
+        sax_soon([job.id], front=True)
+    except Exception:  # noqa: BLE001 -- optional; the sax page makes it when opened
+        logger.warning("[%s] could not queue the sax line", job.id, exc_info=True)
     # One-line per-job summary: the timing telemetry that makes performance
     # regressions (and the CPU-vs-GPU question) answerable from logs (#293).
     t = job.stage_timings or {}

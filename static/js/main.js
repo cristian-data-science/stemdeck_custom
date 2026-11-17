@@ -13,7 +13,7 @@ import { wireTransportButtons } from "./transport.js";
 import { wireBeatGridUi } from "./beatgridUi.js";
 import { togglePlayPause, updateLoopRegionVisual, toggleMetronome, transport, setPlayheadTime, setLoopRange } from "./transport.js";
 import { setSectionsLoopBridge } from "./sections.js";
-import { wireStemListControls, wireMixerToolbar, laneDragIcon } from "./mixer.js";
+import { wireStemListControls, wireMixerToolbar, wireSaxLink, laneDragIcon } from "./mixer.js";
 import { initCatalog, collectDiagnostics } from "./catalog.js";
 import { initNotifications, notifyFailure, dismissFailuresByJobId } from "./notifications.js";
 import { runStoreMigrationIfNeeded } from "./utils.js";
@@ -447,6 +447,7 @@ wireFooterControls();
 requestAnimationFrame(drawFooterPlaceholder);
 wireStemListControls();
 wireMixerToolbar();
+wireSaxLink();
 wireStemChoiceButtons();
 wireAllButton();
 wireVocalModeToggle();
@@ -1218,7 +1219,7 @@ document.addEventListener("click", (e) => {
   const anchor = e.target.closest('a[target="_blank"]');
   // Off to the score at this moment of the song (?t=): the mixer stops, or
   // both would play at once.
-  if (anchor?.classList.contains("mx-score-link") && transport()?.isPlaying?.()) togglePlayPause();
+  if ((anchor?.classList.contains("mx-score-link") || anchor?.id === "mixer-sax") && transport()?.isPlaying?.()) togglePlayPause();
   if (anchor?.href) {
     const openUrl = window.__TAURI__?.core?.invoke;
     if (openUrl) {

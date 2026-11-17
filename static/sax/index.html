@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Saxo — StemDeck</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/css/variables.css" />
+    <link rel="stylesheet" href="/css/sax.css" />
+  </head>
+  <body>
+    <header class="sx-top">
+      <a class="sx-back" href="/" title="Volver al estudio">← StemDeck</a>
+      <div class="sx-title">
+        <h1><span class="sx-logo">🎷</span> <span id="sx-title">Saxo</span></h1>
+        <div class="sx-sub" id="sx-sub">Elige qué parte de la canción toca el saxo</div>
+      </div>
+      <div class="sx-pick" id="sx-stems" role="group" aria-label="Qué stems toca el saxo"
+           title="Qué partes de la canción toca el saxo. La primera que eliges es la melodía principal (1); las demás rellenan sus silencios"></div>
+      <label class="sx-field" title="El saxo que tocas: sus notas se escriben transpuestas (un Alto lee una sexta mayor más arriba de lo que suena)">
+        Saxo
+        <select id="sx-type">
+          <option value="alto">Alto (Mi♭)</option>
+          <option value="tenor">Tenor (Si♭)</option>
+          <option value="soprano">Soprano (Si♭)</option>
+          <option value="baritone">Barítono (Mi♭)</option>
+        </select>
+      </label>
+      <label class="sx-field" title="Para el saxo: la nota que lees y tocas (un saxo Alto lee una sexta mayor más arriba de lo que suena). Como suenan: las notas reales de la canción, las que tocaría un piano">
+        Notas
+        <select id="sx-view">
+          <option value="written">Para el saxo</option>
+          <option value="concert">Como suenan</option>
+        </select>
+      </label>
+      <label class="sx-field" title="Ligado: la línea como la tocaría un saxofonista (una nota sostenida en vez de sus pedazos, sin adornos ni notas sueltas que no pertenecen, ligando los silencios mínimos). Todas las notas: tal como salieron de la transcripción">
+        Fraseo
+        <select id="sx-phrasing">
+          <option value="clean">Ligado</option>
+          <option value="all">Todas las notas</option>
+        </select>
+      </label>
+      <label class="sx-field">
+        Nombres
+        <select id="sx-names">
+          <option value="solfege">Do Re Mi</option>
+          <option value="letters">C D E</option>
+        </select>
+      </label>
+    </header>
+
+    <main class="sx-stage">
+      <div class="sx-next" id="sx-next" aria-live="off" title="Las notas que vienen (escritas para tu saxo)"></div>
+      <div class="sx-body">
+        <aside class="sx-horn">
+          <div class="sx-horn-art" id="sx-horn"></div>
+          <div class="sx-now" id="sx-now">
+            <div class="sx-now-name" id="sx-now-name">—</div>
+            <div class="sx-now-sub" id="sx-now-sub">Pulsa ▶</div>
+            <div class="sx-you" id="sx-you" hidden>
+              <div class="sx-you-meter"><i id="sx-you-needle"></i></div>
+              <div class="sx-you-text" id="sx-you-text">🎤 toca…</div>
+            </div>
+          </div>
+          <button class="sx-horn-switch" id="sx-horn-switch" type="button"
+                title="Cambiar entre el diagrama de llaves (nuevo) y la foto del saxo (anterior)">🖼 Ver foto</button>
+        </aside>
+        <div class="sx-lane-wrap">
+          <canvas class="sx-lane" id="sx-lane" aria-label="Notas que llegan al saxo"></canvas>
+          <div class="sx-editbar" id="sx-editbar" role="toolbar" aria-label="Editar notas" hidden>
+            <button type="button" id="sx-undo" title="Deshacer (Ctrl+Z)" disabled>↶</button>
+            <button type="button" id="sx-redo" title="Rehacer (Ctrl+Y)" disabled>↷</button>
+            <span class="sx-edit-sep"></span>
+            <button type="button" id="sx-add" class="sx-edit-add" title="Agregar una nota donde está la canción (N), a la altura de la nota elegida o de la más cercana; o doble clic en un lugar vacío del pentagrama. Luego arrástrala o usa ▲▼ ◀▶">＋ Nota</button>
+            <span class="sx-edit-info" id="sx-edit-info">Toca una nota</span>
+            <button type="button" id="sx-del" class="sx-edit-del" title="Borrar la nota (Supr)" disabled>🗑 Borrar</button>
+            <button type="button" id="sx-down" title="Medio tono abajo (↓)" disabled>▼</button>
+            <button type="button" id="sx-up" title="Medio tono arriba (↑)" disabled>▲</button>
+            <button type="button" id="sx-oct-down" title="Una octava abajo (Mayús+↓)" disabled>8↓</button>
+            <button type="button" id="sx-oct-up" title="Una octava arriba (Mayús+↑)" disabled>8↑</button>
+            <button type="button" id="sx-earlier" title="Antes (←)" disabled>◀</button>
+            <button type="button" id="sx-later" title="Después (→)" disabled>▶</button>
+            <button type="button" id="sx-shorter" title="Más corta (Alt+←, o arrastra su borde derecho)" disabled>⇤ Corta</button>
+            <button type="button" id="sx-longer" title="Más larga (Alt+→, o arrastra su borde derecho)" disabled>Larga ⇥</button>
+            <span class="sx-edit-sep"></span>
+            <span class="sx-edit-count" id="sx-edit-count"></span>
+            <button type="button" id="sx-reset" title="Quitar todos los cambios de esta línea">Volver al original</button>
+          </div>
+          <div class="sx-status" id="sx-status" hidden></div>
+        </div>
+      </div>
+    </main>
+
+    <footer class="sx-bar">
+      <button class="sx-play" id="sx-play" type="button" title="Reproducir / pausar (Espacio)">▶</button>
+      <span class="sx-time"><span id="sx-now-t">0:00</span> / <span id="sx-total">0:00</span></span>
+      <input class="sx-seek" id="sx-seek" type="range" min="0" max="1000" value="0" aria-label="Posición" />
+      <span class="sx-group" role="group" aria-label="Velocidad" title="Velocidad (mantiene la afinación)">
+        <button type="button" data-speed="25">25 %</button>
+        <button type="button" data-speed="50">50 %</button>
+        <button type="button" data-speed="70">70 %</button>
+        <button type="button" data-speed="100" aria-pressed="true">100 %</button>
+      </span>
+      <label class="sx-field" id="sx-engine-field" hidden
+             title="SWAM: un saxo por modelado físico (Audio Modeling SWAM Saxophones, instalado en este PC), con transiciones, respiración y dinámica de verdad; graba la línea en unos segundos. Grabado: notas sueltas de un saxo real (Iowa), al instante">
+        Saxo
+        <select id="sx-engine">
+          <option value="swam">SWAM (modelado físico)</option>
+          <option value="iowa">Grabado (notas sueltas)</option>
+        </select>
+      </label>
+      <label class="sx-field" title="Expresivo: el saxo toca la voz como fue cantada (sus deslizamientos, su vibrato, sus matices), con un saxo grabado sin vibrato. Notas exactas: cada nota fija, como está escrita">
+        Sonido
+        <select id="sx-expression">
+          <option value="expressive">Expresivo (como canta)</option>
+          <option value="exact">Notas exactas</option>
+        </select>
+      </label>
+      <label class="sx-field" title="Qué se escucha">
+        Escuchar
+        <select id="sx-sound">
+          <option value="sax-rest">Saxo + resto de la canción</option>
+          <option value="sax">Solo saxo</option>
+          <option value="original">Canción original</option>
+        </select>
+      </label>
+      <label class="sx-field sx-vol" title="Volumen del saxo">🎷 <input type="range" id="sx-vol-sax" min="0" max="100" value="80" /></label>
+      <label class="sx-field sx-vol" title="Volumen del resto de la canción">🎶 <input type="range" id="sx-vol-rest" min="0" max="100" value="70" /></label>
+      <span class="sx-group" title="Cuántos segundos de notas se ven antes de llegar al saxo">
+        <button type="button" id="sx-ahead-less" title="Notas más separadas">−</button>
+        <output id="sx-ahead">5 s</output>
+        <button type="button" id="sx-ahead-more" title="Ver venir más">＋</button>
+      </span>
+      <button class="sx-mic" id="sx-edit" type="button" aria-pressed="false"
+              title="Editar: toca una nota para borrarla o moverla (arrástrala arriba/abajo o a los lados); ↶ deshace">✏️ Editar</button>
+      <button class="sx-mic" id="sx-mic" type="button" aria-pressed="false"
+              title="Practicar: toca tu saxo; el micrófono lo escucha y te dice si estás en la nota (y cuántos cents arriba o abajo)">🎤 Practicar</button>
+      <button class="sx-mic" id="sx-wait" type="button" aria-pressed="false" hidden
+              title="Esperarme: la canción se detiene en cada nota hasta que la tocas">⏸ Esperarme</button>
+      <span class="sx-score" id="sx-score" hidden></span>
+      <span class="sx-sound-state" id="sx-sound-state">Cargando el saxo real…</span>
+      <span class="sx-swam-state" id="sx-swam-state" hidden></span>
+      <span class="sx-stats" id="sx-stats"></span>
+      <span class="sx-warn" id="sx-warn" hidden></span>
+    </footer>
+
+    <audio id="sx-audio" preload="auto"></audio>
+    <script type="module" src="/js/sax/main.js"></script>
+  </body>
+</html>

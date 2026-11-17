@@ -1537,3 +1537,258 @@ test("«⚙» quick menu with the panels hidden: half see-through, lit when touc
   await expect(page.locator(".sc-transport")).toBeVisible();
   await expect(gear).toBeHidden();
 });
+
+test("🎷 Saxo: the piano as a saxophone line, notes flying to the horn, its keys lit, written for the saxophone", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/sax/?job=5c0de0000001&stems=piano");
+  await page.waitForFunction(() => window.__sax?.notes?.length > 0);
+  const st = await page.evaluate(() => ({ n: window.__sax.notes.length, mono: window.__sax.notes.every((x, i, a) => i === 0 || x.start >= a[i - 1].end) }));
+  expect(st.n).toBeGreaterThan(10);
+  expect(st.mono).toBe(true); // one note at a time
+  await expect(page.locator('#sx-stems [data-stem="piano"]')).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#sx-sub")).toContainText("Alto");
+  // A moment with a note sounding: its keys lit on the horn, its name below, first in the strip.
+  const at = await page.evaluate(() => { const n = window.__sax.notes[3]; return (n.start + n.end) / 2; });
+  await page.evaluate((t) => { document.querySelector("#sx-audio").currentTime = t; }, at);
+  await expect.poll(() => page.locator(".sx-key.on").count()).toBeGreaterThan(0);
+  await expect(page.locator(".sx-chip.now")).toHaveCount(1);
+  const alto = await page.locator("#sx-now-name").textContent();
+  await expect(page.locator("#sx-now-sub")).toContainText("suena");
+  // Another saxophone: the same sound, written otherwise.
+  await page.locator("#sx-type").selectOption("tenor");
+  await expect.poll(() => page.locator("#sx-now-name").textContent()).not.toBe(alto);
+  await expect(page.locator("#sx-sub")).toContainText("Tenor");
+  // Only the piano in this song: nothing else to play under it; it still plays (silent clock).
+  await page.locator("#sx-play").click();
+  await expect.poll(() => page.evaluate(() => window.__sax.playing)).toBe(true);
+  await page.waitForTimeout(800);
+  expect(await page.evaluate(() => document.querySelector("#sx-audio").currentTime)).toBeGreaterThan(at);
+  await page.locator("#sx-play").click();
+  // Remembered: the saxophone chosen.
+  await page.reload();
+  await page.waitForFunction(() => window.__sax?.notes?.length > 0);
+  await expect(page.locator("#sx-type")).toHaveValue("tenor");
+  // The fingering chart by default (the photograph is one choice away), and the recorded notes loaded.
+  await expect(page.locator(".sx-chart")).toHaveCount(1);
+  await expect(page.locator("#sx-sound-state")).toContainText("Saxo real", { timeout: 30_000 });
+  // «Como suenan»: the names of the song's own notes, not the saxophone's.
+  await page.locator("#sx-type").selectOption("alto");
+  await page.evaluate((t) => { document.querySelector("#sx-audio").currentTime = t; }, at);
+  await expect.poll(() => page.locator("#sx-now-sub").textContent()).toContain("suena");
+  await page.locator("#sx-view").selectOption("concert");
+  await expect(page.locator("#sx-now-sub")).toContainText("en tu saxo");
+  await page.locator("#sx-view").selectOption("written");
+  expect(errors).toEqual([]);
+});
+
+test("🎷 Saxo: changing what plays under it while it plays goes on playing (it stuck, until a reload)", async ({ page }) => {
+  // Two different files for «Saxo + resto» and «Canción original» (the seed
+  // has only a piano): changing the source mid-play is what stuck.
+  const piano = await (await page.request.get("/api/jobs/5c0de0000001/score/audio/piano.flac")).body();
+  for (const url of ["**/sax/backing.flac*", "**/score/audio/mix.flac"]) {
+    await page.route(url, (r) => r.fulfill({ status: 200, contentType: "audio/flac", body: piano }));
+  }
+  await page.goto("/sax/?job=5c0de0000001&stems=piano");
+  await page.waitForFunction(() => window.__sax?.notes?.length > 0 && document.querySelector("#sx-audio").readyState >= 1);
+  await page.locator("#sx-play").click();
+  await expect.poll(() => page.evaluate(() => window.__sax.playing)).toBe(true);
+  await page.waitForTimeout(1200);
+  const t1 = await page.evaluate(() => document.querySelector("#sx-audio").currentTime);
+  await page.locator("#sx-sound").selectOption("original");
+  await page.waitForTimeout(1500);
+  const after = await page.evaluate(() => ({ t: document.querySelector("#sx-audio").currentTime, paused: document.querySelector("#sx-audio").paused, playing: window.__sax.playing }));
+  expect(after.paused).toBe(false);
+  expect(after.playing).toBe(true);
+  expect(after.t).toBeGreaterThan(t1); // where it was, and on
+  await page.locator("#sx-sound").selectOption("sax-rest");
+  await page.waitForTimeout(1200);
+  expect(await page.evaluate(() => document.querySelector("#sx-audio").paused)).toBe(false);
+  // ▶ still answers.
+  await page.locator("#sx-play").click();
+  await expect.poll(() => page.evaluate(() => document.querySelector("#sx-audio").paused)).toBe(true);
+  await page.locator("#sx-play").click();
+  await expect.poll(() => page.evaluate(() => document.querySelector("#sx-audio").paused)).toBe(false);
+});
+
+test("🎷 Saxo ✏️ Editar ＋ Nota: a note put in (button, double tap), moved, stretched, kept, taken out", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const JOB = "5c0de0000001";
+  await page.request.put(`/api/jobs/${JOB}/sax/edits`, { data: { set: "piano|clean", edits: {} } });
+  await page.goto(`/sax/?job=${JOB}&stems=piano`);
+  await page.waitForFunction(() => window.__sax?.notes?.length > 5 && window.__saxLane.hits.length > 3);
+  const n0 = await page.evaluate(() => window.__sax.notes.length);
+  await page.locator("#sx-edit").click();
+  // «＋ Nota»: one more note, where the song is, picked.
+  await page.locator("#sx-add").click();
+  const added = () => page.evaluate(() => window.__sax.notes.filter((n) => n.added).map((n) => ({ key: n.key, midi: n.midi, start: n.start, len: +(n.end - n.start).toFixed(2) })));
+  let a = await added();
+  expect(a.length).toBe(1);
+  expect(await page.evaluate(() => window.__saxEdit.selected)).toBe(a[0].key);
+  expect(a[0].len).toBe(0.4);
+  // Moved and stretched like any other.
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("Alt+ArrowRight");
+  const b = (await added())[0];
+  expect(b.midi).toBe(a[0].midi + 1);
+  expect(b.len).toBe(0.5);
+  // A double tap on the empty lane: another, at that moment.
+  const box = await page.locator("#sx-lane").boundingBox();
+  const free = await page.evaluate(() => {
+    const hits = window.__saxLane.hits;
+    const y = window.__saxLane.size.h - 24; // clear of the edit bar, which floats over the top
+    for (let x = 400; x < 900; x += 20) if (!hits.some((h) => x >= h.x - 8 && x <= h.x + h.w + 8 && y >= h.y - 10 && y <= h.y + h.h + 10)) return { x, y };
+    return null;
+  });
+  await page.mouse.dblclick(box.x + free.x, box.y + free.y);
+  expect((await added()).length).toBe(2);
+  // Kept for the next visit.
+  await page.waitForTimeout(800);
+  await page.reload();
+  await page.waitForFunction(() => window.__sax?.notes?.length > 5);
+  expect((await added()).length).toBe(2);
+  const saved = await (await page.request.get(`/api/jobs/${JOB}/sax/edits`)).json();
+  expect(Object.values(saved.sets["piano|clean"]).filter((e) => e.add).length).toBe(2);
+  // 🗑 takes one out for good; «Volver al original» the rest.
+  await page.locator("#sx-edit").click();
+  await page.evaluate((k) => window.__saxEdit.selected = k, b.key);
+  await page.locator("#sx-add").click(); // the same place: picks the one there
+  await page.locator("#sx-reset").click();
+  expect((await added()).length).toBe(0);
+  expect(await page.evaluate(() => window.__sax.notes.length)).toBe(n0);
+  await page.waitForTimeout(800);
+  expect(errors).toEqual([]);
+});
+
+test("🎷 Saxo ✏️ Editar: a note taken out, moved, undone, kept for the next visit, back to the original", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const JOB = "5c0de0000001";
+  await page.request.put(`/api/jobs/${JOB}/sax/edits`, { data: { set: "piano|clean", edits: {} } });
+  await page.goto(`/sax/?job=${JOB}&stems=piano`);
+  await page.waitForFunction(() => window.__sax?.notes?.length > 5 && window.__saxLane.hits.length > 3);
+  const original = await page.evaluate(() => window.__sax.notes.map((n) => `${n.key}:${n.midi}`).join());
+  await page.locator("#sx-edit").click();
+  await expect(page.locator("#sx-editbar")).toBeVisible();
+  await expect(page.locator("#sx-del")).toBeDisabled();
+  // A tap on a note picks it.
+  const box = await page.locator("#sx-lane").boundingBox();
+  const tap = async (i) => {
+    const h = await page.evaluate((k) => window.__saxLane.hits[k], i);
+    await page.mouse.click(box.x + h.x + Math.min(h.w / 2, 12), box.y + h.y + h.h / 2);
+    return h;
+  };
+  const h = await tap(2);
+  await expect.poll(() => page.evaluate(() => window.__saxEdit.selected)).toBe(h.key);
+  await expect(page.locator("#sx-del")).toBeEnabled();
+  const midiOf = (key) => page.evaluate((k) => window.__sax.notes.find((n) => n.key === k)?.midi ?? null, key);
+  // ↑ a semitone, then 🗑: one change (the note is out).
+  await page.keyboard.press("ArrowUp");
+  expect(await midiOf(h.key)).toBe(h.midi + 1);
+  await expect(page.locator("#sx-edit-count")).toHaveText("1 cambio");
+  const n = await page.evaluate(() => window.__sax.notes.length);
+  await page.locator("#sx-del").click();
+  expect(await page.evaluate(() => window.__sax.notes.length)).toBe(n - 1);
+  expect(await midiOf(h.key)).toBe(null);
+  // The next note is picked: a run of wrong notes goes one tap each.
+  expect(await page.evaluate(() => window.__saxEdit.selected)).not.toBe(h.key);
+  // Ctrl+Z twice: back where it was; Ctrl+Y: moved again.
+  await page.keyboard.press("Control+z");
+  expect(await midiOf(h.key)).toBe(h.midi + 1);
+  await page.locator("#sx-undo").click();
+  expect(await midiOf(h.key)).toBe(h.midi);
+  await expect(page.locator("#sx-edit-count")).toHaveText("");
+  await page.keyboard.press("Control+y");
+  expect(await midiOf(h.key)).toBe(h.midi + 1);
+  // Dragged down: by semitones (an octave is 7 staff steps).
+  const h2 = await tap(4);
+  const semitone = await page.evaluate(() => (window.__saxLane.geometry().hs * 7) / 12);
+  const x = box.x + h2.x + Math.min(h2.w / 2, 12);
+  const y = box.y + h2.y + h2.h / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y + semitone * 1.1, { steps: 3 });
+  await page.mouse.move(x, y + semitone * 2.1, { steps: 3 });
+  await page.mouse.up();
+  expect(await midiOf(h2.key)).toBe(h2.midi - 2);
+  await expect(page.locator("#sx-edit-count")).toHaveText("2 cambios");
+  // Kept: on the next visit the line has them.
+  await page.waitForTimeout(800);
+  await page.reload();
+  await page.waitForFunction(() => window.__sax?.notes?.length > 5);
+  expect(await midiOf(h.key)).toBe(h.midi + 1);
+  expect(await midiOf(h2.key)).toBe(h2.midi - 2);
+  // «Volver al original»: as the line was made (and kept so).
+  await page.locator("#sx-edit").click();
+  await page.locator("#sx-reset").click();
+  expect(await page.evaluate(() => window.__sax.notes.map((n) => `${n.key}:${n.midi}`).join())).toBe(original);
+  await page.waitForTimeout(800);
+  const saved = await (await page.request.get(`/api/jobs/${JOB}/sax/edits`)).json();
+  expect(saved.sets["piano|clean"]).toBeUndefined();
+  expect(errors).toEqual([]);
+});
+
+test("🎷 Saxo: the lane dragged moves the song; a note made longer and shorter; the strip by phrases; the chart or the photo", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  const JOB = "5c0de0000001";
+  await page.request.put(`/api/jobs/${JOB}/sax/edits`, { data: { set: "piano|clean", edits: {} } });
+  await page.goto(`/sax/?job=${JOB}&stems=piano`);
+  await page.waitForFunction(() => window.__sax?.notes?.length > 5 && window.__saxLane.hits.length > 3 && document.querySelector("#sx-audio").readyState >= 1);
+  // Dragged left on the lane: the song goes on by what moved under the pointer.
+  const box = await page.locator("#sx-lane").boundingBox();
+  const t0 = await page.evaluate(() => document.querySelector("#sx-audio").currentTime);
+  const pps = await page.evaluate(() => (window.__saxLane.size.w - 64) / window.__saxLane.lookahead);
+  const y = box.y + 12; // above the notes
+  await page.mouse.move(box.x + 700, y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 600, y, { steps: 4 });
+  await page.mouse.move(box.x + 500, y, { steps: 4 });
+  await page.mouse.up();
+  const t1 = await page.evaluate(() => document.querySelector("#sx-audio").currentTime);
+  expect(t1 - t0).toBeGreaterThan((200 / pps) * 0.8);
+  expect(t1 - t0).toBeLessThan((200 / pps) * 1.2);
+  // The strip: the group being played, one colour; it does not change at every note.
+  await expect(page.locator("#sx-next .sx-chip[data-i]").first()).toBeVisible();
+  const group = await page.evaluate(() => { const n = window.__sax.notes.find((x) => x.start > document.querySelector("#sx-audio").currentTime + 0.5); return window.__sax.groups[n.g].length; });
+  expect(group).toBeGreaterThan(0);
+  expect(group).toBeLessThanOrEqual(10);
+  // «Editar»: longer with Alt+→, shorter with ⇤, and by its right end dragged.
+  await page.locator("#sx-edit").click();
+  const h = await page.evaluate(() => window.__saxLane.hits[2]);
+  await page.mouse.click(box.x + h.x + Math.min(h.w / 3, 8), box.y + h.y + h.h / 2);
+  await expect.poll(() => page.evaluate(() => window.__saxEdit.selected)).toBe(h.key);
+  const len = () => page.evaluate((k) => { const n = window.__sax.notes.find((x) => x.key === k); return n.end - n.start; }, h.key);
+  const l0 = await len();
+  await page.keyboard.press("Alt+ArrowRight");
+  expect(await len()).toBeCloseTo(l0 + 0.1, 2);
+  await page.locator("#sx-shorter").click();
+  await page.locator("#sx-shorter").click();
+  expect(await len()).toBeCloseTo(Math.max(0.05, l0 - 0.1), 2);
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); // the lane redrawn
+  const h2 = await page.evaluate((k) => window.__saxLane.hits.find((x) => x.key === k), h.key);
+  const ex = box.x + h2.x + h2.w - 2;
+  const ey = box.y + h2.y + h2.h / 2;
+  await page.mouse.move(ex, ey);
+  await page.mouse.down();
+  await page.mouse.move(ex + pps * 0.25, ey, { steps: 4 });
+  await page.mouse.move(ex + pps * 0.5, ey, { steps: 4 });
+  await page.mouse.up();
+  expect(await len()).toBeGreaterThan(Math.max(0.05, l0 - 0.1) + 0.3);
+  // Back to the original, and the photograph back with one choice.
+  await page.locator("#sx-reset").click();
+  expect(await len()).toBeCloseTo(l0, 2);
+  await expect(page.locator(".sx-chart")).toHaveCount(1);
+  await expect(page.locator("#sx-horn-switch")).toHaveText("🖼 Ver foto");
+  await page.locator("#sx-horn-switch").click();
+  await expect(page.locator(".sx-horn-photo")).toHaveCount(1);
+  await expect.poll(() => page.locator(".sx-horn-img").evaluate((img) => img.complete && img.naturalWidth > 0)).toBe(true);
+  await expect(page.locator(".sx-chart")).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator(".sx-horn-photo")).toHaveCount(1);
+  await expect(page.locator("#sx-horn-switch")).toHaveText("▦ Ver diagrama");
+  await page.locator("#sx-horn-switch").click();
+  await expect(page.locator(".sx-chart")).toHaveCount(1);
+  expect(errors).toEqual([]);
+});

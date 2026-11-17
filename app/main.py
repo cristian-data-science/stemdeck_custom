@@ -203,6 +203,9 @@ async def _pianoteq_sweep_later(delay: float = 15.0) -> None:
         queued = await asyncio.to_thread(pianoteq_sweep)
         if queued:
             _log.info("pianoteq: %d score(s) checked in the background", queued)
+        from app.api.sax import sax_sweep
+
+        await asyncio.to_thread(sax_sweep)  # the voices' saxophone lines
     except Exception:
         _log.exception("pianoteq background sweep failed")
 

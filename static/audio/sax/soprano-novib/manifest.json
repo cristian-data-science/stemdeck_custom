@@ -1,0 +1,333 @@
+{
+ "sax": "soprano-novib",
+ "source": "University of Iowa Electronic Music Studios, Musical Instrument Samples (MIS), https://theremin.music.uiowa.edu/MIS.html",
+ "player": "Michael Giles (1997)",
+ "terms": "freely available ... may be downloaded and used for any projects, without restrictions",
+ "layers": [
+  "mf",
+  "ff"
+ ],
+ "vibrato": false,
+ "notes": {
+  "56": {
+   "ff": {
+    "cents": -0.0,
+    "sec": 3.56
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.39
+   }
+  },
+  "57": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 3.24
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.49
+   }
+  },
+  "58": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 3.49
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.57
+   }
+  },
+  "59": {
+   "ff": {
+    "cents": -0.0,
+    "sec": 3.35
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.5
+   }
+  },
+  "60": {
+   "ff": {
+    "cents": 10.0,
+    "sec": 3.24
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.33
+   }
+  },
+  "61": {
+   "ff": {
+    "cents": -0.0,
+    "sec": 3.39
+   },
+   "mf": {
+    "cents": -0.0,
+    "sec": 3.54
+   }
+  },
+  "62": {
+   "ff": {
+    "cents": -0.0,
+    "sec": 3.03
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.33
+   }
+  },
+  "63": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 3.53
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.17
+   }
+  },
+  "64": {
+   "ff": {
+    "cents": -0.0,
+    "sec": 3.45
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.21
+   }
+  },
+  "65": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 3.22
+   },
+   "mf": {
+    "cents": 0.0,
+    "sec": 3.23
+   }
+  },
+  "66": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 3.05
+   },
+   "mf": {
+    "cents": 0.0,
+    "sec": 3.0
+   }
+  },
+  "67": {
+   "ff": {
+    "cents": -0.0,
+    "sec": 3.38
+   },
+   "mf": {
+    "cents": -0.0,
+    "sec": 3.5
+   }
+  },
+  "68": {
+   "ff": {
+    "cents": -10.0,
+    "sec": 3.53
+   },
+   "mf": {
+    "cents": 0.0,
+    "sec": 3.04
+   }
+  },
+  "69": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 3.19
+   },
+   "mf": {
+    "cents": -20.0,
+    "sec": 2.27
+   }
+  },
+  "70": {
+   "ff": {
+    "cents": -0.0,
+    "sec": 2.93
+   },
+   "mf": {
+    "cents": -0.0,
+    "sec": 3.19
+   }
+  },
+  "71": {
+   "ff": {
+    "cents": -10.0,
+    "sec": 3.57
+   },
+   "mf": {
+    "cents": 0.0,
+    "sec": 3.22
+   }
+  },
+  "72": {
+   "ff": {
+    "cents": 10.0,
+    "sec": 3.05
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.45
+   }
+  },
+  "73": {
+   "ff": {
+    "cents": -0.0,
+    "sec": 2.93
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.15
+   }
+  },
+  "74": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 2.91
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.25
+   }
+  },
+  "75": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 3.31
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.37
+   }
+  },
+  "76": {
+   "ff": {
+    "cents": -0.0,
+    "sec": 3.25
+   },
+   "mf": {
+    "cents": -0.0,
+    "sec": 3.19
+   }
+  },
+  "77": {
+   "ff": {
+    "cents": 10.0,
+    "sec": 3.17
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.12
+   }
+  },
+  "78": {
+   "ff": {
+    "cents": 0.0,
+    "sec": 3.2
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.2
+   }
+  },
+  "79": {
+   "ff": {
+    "cents": 10.0,
+    "sec": 3.02
+   },
+   "mf": {
+    "cents": 20.0,
+    "sec": 2.67
+   }
+  },
+  "80": {
+   "ff": {
+    "cents": 20.0,
+    "sec": 3.01
+   },
+   "mf": {
+    "cents": 20.0,
+    "sec": 2.91
+   }
+  },
+  "81": {
+   "ff": {
+    "cents": 20.0,
+    "sec": 2.99
+   },
+   "mf": {
+    "cents": 20.0,
+    "sec": 3.21
+   }
+  },
+  "82": {
+   "ff": {
+    "cents": 20.0,
+    "sec": 3.21
+   },
+   "mf": {
+    "cents": 20.0,
+    "sec": 3.1
+   }
+  },
+  "83": {
+   "ff": {
+    "cents": 10.0,
+    "sec": 2.93
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.11
+   }
+  },
+  "84": {
+   "ff": {
+    "cents": 10.0,
+    "sec": 3.62
+   },
+   "mf": {
+    "cents": 10.0,
+    "sec": 3.42
+   }
+  },
+  "85": {
+   "ff": {
+    "cents": 20.0,
+    "sec": 3.05
+   },
+   "mf": {
+    "cents": 30.0,
+    "sec": 2.83
+   }
+  },
+  "86": {
+   "ff": {
+    "cents": 30.0,
+    "sec": 2.92
+   },
+   "mf": {
+    "cents": 40.0,
+    "sec": 2.86
+   }
+  },
+  "87": {
+   "ff": {
+    "cents": 30.0,
+    "sec": 2.99
+   },
+   "mf": {
+    "cents": 40.0,
+    "sec": 3.54
+   }
+  }
+ }
+}

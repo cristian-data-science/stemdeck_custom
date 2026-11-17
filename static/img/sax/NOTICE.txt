@@ -1,0 +1,8 @@
+yas62.webp, yas62@2x.webp — Yamaha alto saxophone YAS-62, resized for the
+«🎷 Saxo» view (static/sax/).
+
+Source: https://commons.wikimedia.org/wiki/File:Yamaha_Saxophone_YAS-62.png
+Authors: Yamaha Corporation (photograph); Habitator terrae (background removed).
+License: Creative Commons Attribution-Share Alike 4.0 International
+(https://creativecommons.org/licenses/by-sa/4.0/). Changes: resized and
+converted to WebP; these files are shared under the same license.

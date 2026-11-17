@@ -10,6 +10,7 @@ from app.api.jobs import router as jobs_router
 from app.api.playlist import router as playlist_router
 from app.api.qr import router as qr_router
 from app.api.queue import router as queue_router
+from app.api.sax import router as sax_router
 from app.api.score import router as score_router
 from app.api.search import router as search_router
 from app.api.stems import router as stems_router
@@ -21,6 +22,7 @@ router.include_router(jobs_router, prefix="/jobs", tags=["jobs"])
 router.include_router(events_router, tags=["events"])
 router.include_router(stems_router, tags=["stems"])
 router.include_router(score_router, tags=["score"])
+router.include_router(sax_router, tags=["sax"])
 router.include_router(experimental_router, tags=["experimental"])
 router.include_router(qr_router, tags=["qr"])
 router.include_router(queue_router, prefix="/queue", tags=["queue"])

@@ -29,6 +29,7 @@ exec env \
     STEMDECK_DOWNLOADS_DIR="$WORK_DIR/data/downloads" \
     STEMDECK_ACOUSTID_CHECK_KEY=0 \
     STEMDECK_DISCOGS_CHECK_TOKEN=0 \
+    STEMDECK_SWAM_OFF="${STEMDECK_SWAM_OFF:-1}" \
     uv run --no-sync uvicorn app.main:app \
         --host 127.0.0.1 \
         --port "$PORT" \

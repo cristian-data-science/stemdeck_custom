@@ -422,6 +422,27 @@ function makeScoreLink(stem) {
   return a;
 }
 
+// «🎷 Saxo» (static/sax/), in the mixer's header: the song's melodic stems
+// as a saxophone line. One button, not one per row: the name cell is narrow
+// and a second icon pushed the 𝄞 out of it. The voice by default (the sax
+// page falls back to the first melodic stem the song has, and lets you add
+// others: voice and piano...).
+export function wireSaxLink() {
+  const a = document.getElementById("mixer-sax");
+  if (!a) return;
+  const point = () => {
+    const job = currentJobId;
+    const tx = audioEngine ?? multitrack;
+    const now = Number(tx?.getCurrentTime?.()) || 0;
+    const at = job && now > 0.5 ? `&t=${now.toFixed(1)}` : "";
+    // The page picks the part: the voice, or "other" in a song without one
+    // (an instrumental: the saxophone, the winds are there).
+    a.href = job ? `/sax/?job=${job}${at}` : "/sax/";
+  };
+  point();
+  for (const ev of ["pointerdown", "focus", "mouseenter", "click"]) a.addEventListener(ev, point);
+}
+
 function downloadIcon() {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   svg.setAttribute("viewBox", "0 0 24 24");

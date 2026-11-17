@@ -599,6 +599,7 @@ const en = {
 
   "panels.collapse": "Collapse",
   "mixer.hint": "Drag fader · M/S",
+  "mixer.sax": "Saxophone: a part of the song (voice, piano, guitar…) as a saxophone line, notes flying to the horn with its fingering",
   "stemsPanel.ariaLabel": "Stems",
 
   "beatgrid.toolbarAria": "Beat grid editor",
@@ -7806,6 +7807,7 @@ const es = {
 
   "panels.collapse": "Contraer",
   "mixer.hint": "Arrastra el fader · M/S",
+  "mixer.sax": "Saxo: una parte de la canción (voz, piano, guitarra…) como línea de saxo, con las notas llegando al saxo y su digitación",
   "stemsPanel.ariaLabel": "Stems",
 
   "beatgrid.toolbarAria": "Editor de GRID",
