@@ -1776,6 +1776,12 @@ test("🎷 Saxo: the lane dragged moves the song; a note made longer and shorter
   const t1 = await page.evaluate(() => document.querySelector("#sx-audio").currentTime);
   expect(t1 - t0).toBeGreaterThan((200 / pps) * 0.8);
   expect(t1 - t0).toBeLessThan((200 / pps) * 1.2);
+  // The song's rhythm on the staff: a line where each bar starts, numbered
+  // (the fixture: 90 BPM in 4, the first bar at 1 s, so a bar every 2.667 s).
+  const marks = await page.evaluate(() => window.__saxLane.barMarks);
+  expect(marks.length).toBeGreaterThan(0);
+  expect(marks.map((m) => m.bar)).toEqual([...marks.keys()].map((k) => marks[0].bar + k));
+  if (marks.length > 1) expect(marks[1].x - marks[0].x).toBeCloseTo((4 * 60 / 90) * pps, 0);
   // The strip: the group being played, one colour; it does not change at every note.
   await expect(page.locator("#sx-next .sx-chip[data-i]").first()).toBeVisible();
   const group = await page.evaluate(() => { const n = window.__sax.notes.find((x) => x.start > document.querySelector("#sx-audio").currentTime + 0.5); return window.__sax.groups[n.g].length; });

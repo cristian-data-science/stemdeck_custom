@@ -4,6 +4,7 @@
 // ledger lines where it needs them, a breath mark in the rests, sparks
 // thrown back toward the horn while a note sounds.
 
+import { beatIndexAt } from "./beats.js";
 import { noteName, pitchColor, staffStep, written } from "./melody.js";
 
 const MIN_STEP = -6; // A3 (below the low Bb, ledger room)
@@ -25,6 +26,8 @@ export class SaxLane {
     this.size = { w: 1, h: 1 };
     this.hits = []; // [{id, x, y, w, h}] last drawn: tests, taps
     this.selected = null; // «✏️ Editar»: the key of the note picked
+    this.bars = null; // the song's beats and bars (beats.js barGrid), or none
+    this.barMarks = []; // [{x, bar}] the bar lines last drawn: tests
     this.you = null; // «🎤 Practicar»: {midi (as shown), state: ok|near|off, trail: [{age s, midi}]}
   }
 
@@ -76,15 +79,42 @@ export class SaxLane {
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, w, h);
 
-    // Seconds, faint.
-    ctx.strokeStyle = "rgba(255,255,255,0.04)";
-    ctx.lineWidth = 1;
-    for (let s = Math.ceil(t); s < t + this.lookahead; s++) {
-      const x = Math.round(xOf(s)) + 0.5;
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, h);
-      ctx.stroke();
+    this.barMarks = [];
+    if (this.bars) {
+      // The song's rhythm: a faint line at each beat, a clearer one where a
+      // bar starts, with its number (the time, read as on a score).
+      const g = this.bars;
+      ctx.font = "700 11px Inter, sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      for (let i = Math.max(0, beatIndexAt(g.times, t)); i < g.times.length; i++) {
+        const sec = g.times[i];
+        if (sec > t + this.lookahead) break;
+        if (sec < t) continue;
+        const x = Math.round(xOf(sec)) + 0.5;
+        ctx.strokeStyle = g.down[i] ? "rgba(200, 215, 255, 0.22)" : "rgba(255, 255, 255, 0.055)";
+        ctx.lineWidth = g.down[i] ? 1.5 : 1;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+        if (g.down[i]) {
+          ctx.fillStyle = "rgba(200, 215, 255, 0.5)";
+          ctx.fillText(String(g.bar[i]), x + 5, 6);
+          this.barMarks.push({ x, bar: g.bar[i] });
+        }
+      }
+    } else {
+      // No beat grid: seconds, faint.
+      ctx.strokeStyle = "rgba(255,255,255,0.04)";
+      ctx.lineWidth = 1;
+      for (let s = Math.ceil(t); s < t + this.lookahead; s++) {
+        const x = Math.round(xOf(s)) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
     }
 
     // The staff: E4 G4 B4 D5 F5 (steps 0..8), and the clef.

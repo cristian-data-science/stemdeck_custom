@@ -1396,6 +1396,7 @@ async function start() {
     state.presence = job.stem_presence || {};
     // The song's beats and bars (the studio's beat grid), when it has them.
     state.bars = barGrid(await api(`/api/jobs/${JOB}/beats`).catch(() => null));
+    lane.bars = state.bars; // drawn on the staff: beats, bars and their numbers
   } catch (e) {
     status(`No se encontró la canción: ${e.message}`);
     return;
