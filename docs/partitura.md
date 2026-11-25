@@ -43,7 +43,7 @@ sin ellas, porque con cookies yt-dlp descarta los clientes que hoy funcionan sin
    privada en la que inicias sesión y que luego cierras, para que YouTube no rote esas cookies
    mientras sigues navegando.
 2. Guarda el archivo como **`youtube-cookies.txt`** en la carpeta del proyecto
-   (`C:\Users\patag\git_provisorio\stemDeck_custom`).
+   (la raíz del repositorio, junto a `Iniciar StemDeck dev.cmd`).
 3. Abre StemDeck con el acceso directo. El lanzador lo configura solo
    («Cookies de YouTube: se usarán desde youtube-cookies.txt»). Si borras el archivo, la
    próxima vez lo desconfigura.
