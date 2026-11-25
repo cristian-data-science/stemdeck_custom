@@ -1995,6 +1995,28 @@ function updateDoomed() {
   $("sc-clean-dur-v").textContent = $("sc-clean-dur").value;
 }
 
+// «🎷 Saxo» (next to «🎹 Piano»): this stem in the sax view (static/sax/),
+// in another tab, at the moment the score is at. Its own link: the mixer's 🎷
+// (static/js/mixer.js wireSaxLink) is untouched and still lets the sax page
+// pick the part. Here the part is the one on screen (?stems=<STEM>); every
+// stem the score transcribes is one the sax page takes. Playing pauses, so
+// two players don't sound at once (the mixer's 🎷 does the same).
+function wireSaxLink() {
+  const a = $("sc-sax-link");
+  if (!a || !JOB) return;
+  const point = () => {
+    const now = Number(player.time) || 0;
+    const at = now > 0.5 ? `&t=${now.toFixed(1)}` : "";
+    a.href = `/sax/?job=${encodeURIComponent(JOB)}&stems=${encodeURIComponent(STEM)}${at}`;
+  };
+  point();
+  for (const ev of ["pointerdown", "focus", "mouseenter"]) a.addEventListener(ev, point);
+  a.addEventListener("click", () => {
+    point();
+    if (player.playing) togglePlay();
+  });
+}
+
 // ── practice: loop, hands, metronome, count-in, MIDI keyboard ──────────
 
 /** ▶ / ❚❚, with the count-in («Cuenta») before playing. */
@@ -2451,6 +2473,7 @@ function wireControls() {
   $("sc-mini-fs").onclick = () => toggleFullscreen();
   for (const b of document.querySelectorAll("[data-jump]")) b.onclick = () => jump(Number(b.dataset.jump));
   $("sc-view-toggle").onclick = () => setFallView(!state.view.fall);
+  wireSaxLink();
   $("sc-controls-toggle").onclick = () => setCompact(!state.view.compact);
   $("sc-settings-toggle").onclick = () => setSettings(!state.view.panelSettings);
   setSettings(!!state.view.panelSettings);
